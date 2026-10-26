@@ -12,6 +12,8 @@ node tools/serve.js
 
 http://localhost:5174 를 연다. `index.html` 을 바로 열어도 되지만 일러스트(`assets/portrait/`)는 상대 경로라 폴더째 있어야 한다. 외부 라이브러리 없이 돌고, 웹폰트만 온라인에서 받는다.
 
+휴대폰에서는 https://choiyond-lab.github.io/regress1996/ (GitHub Pages, 저장소 https://github.com/choiyond-lab/regress1996). `node build.js` 후 `index.html` 을 커밋해 `main` 에 올리면 1~2분 뒤 자동으로 바뀐다. 밑줄로 시작하는 파일(`_default.svg`)이 빠지지 않도록 `.nojekyll` 을 둔다.
+
 ## 빌드와 테스트
 
 ```bash
