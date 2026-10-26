@@ -1,7 +1,7 @@
 // ===== 화면 =====
 // 화면 상태는 저장하지 않는다. 게임 상태는 S, 이야기 진행은 RUN 에 있다
 const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, confirmNext: false, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
-  typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '' };
+  typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q' };
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pad2 = n => String(n).padStart(2, '0');
@@ -33,7 +33,7 @@ function render() {
   const vEl = ph.querySelector && ph.querySelector('.view'), sEl = ph.querySelector && ph.querySelector('.sheet-body');
   const vTop = vEl ? vEl.scrollTop : 0, sTop = sEl ? sEl.scrollTop : 0;
   ph.innerHTML = topbarHTML() + `<main class="view">${viewHTML()}</main>` + tabbarHTML()
-    + (UI.sheet ? sheetHTML() : '') + (RUN && RUN.cur ? storyHTML() : '')
+    + (UI.sheet ? sheetHTML() : '') + (RUN && RUN.cur ? storyHTML() : UI.pops.length ? popHTML(UI.pops[0]) : '')
     + `<div class="toast" id="toast"${UI.toastMsg ? '' : ' hidden'}>${esc(UI.toastMsg)}</div>`;
   if (key === UI.scrollKey) {
     const v = ph.querySelector && ph.querySelector('.view'), s = ph.querySelector && ph.querySelector('.sheet-body');
@@ -43,7 +43,7 @@ function render() {
   typewriter();
 }
 function afterTurn() {
-  storyStart();
+  if (!UI.pops.length) storyStart();   // 결산 창을 먼저 보고 나서 이야기가 시작된다
   if (S.ended && !RUN && !UI.endShown) { UI.endShown = true; UI.sheet = 'ending'; }
   render();
 }
@@ -120,10 +120,11 @@ function investHTML() {
   const estN = Object.values(S.re).reduce((s, r) => s + r.q, 0), luxN = Object.values(S.lux).reduce((s, n) => s + n, 0);
   const ls = leaseMonth(), emptyN = Object.keys(S.re).reduce((s, id) => s + (S.re[id].mode === 'empty' ? rentN(id) : 0), 0);
   return `<div class="pad">
-    <div class="card"><h3>투자 평가액 <span class="r">실현 손익 <b class="num ${pctCls(S.realized)}">${fmtSigned(S.realized)}</b></span></h3>
+    <button class="card fin-link" data-act="sheet" data-arg="finance"><h3>투자 평가액 <span class="r">실현 손익 <b class="num ${pctCls(S.realized)}">${fmtSigned(S.realized)}</b></span></h3>
       <div class="big num">${fmtWon(stocks + b.dep + b.estate + b.lux)}</div>
       <div class="sub">현금 ${fmtWon(S.cash)} · 대출 ${fmtWon(S.bank.loan)}${b.jdep ? ' · 전세 보증금 ' + fmtWon(b.jdep) : ''}</div>
-      <div class="sub num">받은 배당 ${fmtWon(S.divTotal)} · 낸 수수료 ${fmtWon(S.feePaid)} · 낸 세금 ${fmtWon(S.taxPaid)}</div></div>
+      <div class="sub num">받은 배당 ${fmtWon(S.divTotal)} · 낸 수수료 ${fmtWon(S.feePaid)} · 낸 세금 ${fmtWon(S.taxPaid)}</div>
+      <span class="fin-more">상세 재무 내역 ${icon('next', 14)}</span></button>
     ${S.flags.account ? '' : '<div class="note warn">아직 증권 계좌가 없습니다. 이야기를 진행하세요.</div>'}
     <div class="tiles">
       ${tile('stocks', 'chart', '주식', fmtWon(stocks), '국내·해외·ETF·파생·코인')}
@@ -258,13 +259,13 @@ function yearLabels(mis) {
 
 // ---- 시트 ----
 function sheetHTML() {
-  const map = { lotto: lottoSheet, stocks: stocksSheet, bank: bankSheet, estate: estateSheet, estMgr: estMgrSheet, lux: luxSheet, person: personSheet, shop: shopSheet, slot: slotSheet, log: logSheet,
+  const map = { lotto: lottoSheet, stocks: stocksSheet, bank: bankSheet, estate: estateSheet, estMgr: estMgrSheet, finance: financeSheet, lux: luxSheet, person: personSheet, shop: shopSheet, slot: slotSheet, log: logSheet,
     settings: settingsSheet, gemshop: gemShopSheet, recall: recallSheet, ending: endingSheet };
   const r = (map[UI.sheet] || (() => ({ title: '', body: '' })))();
   return `<div class="sheet" data-act="scrim"><div class="sheet-panel ${r.short ? 'short' : ''}">
     <div class="sheet-head">${r.back ? `<button class="icon-btn" data-act="${r.back}" aria-label="뒤로">${icon('back', 18)}</button>` : ''}<h2>${r.title}</h2>
       <button class="icon-btn" data-act="close" aria-label="닫기">${icon('close', 18)}</button></div>
-    <div class="sheet-body">${r.body}</div></div></div>`;
+    <div class="sheet-body">${r.body}</div>${r.foot ? `<div class="sheet-foot">${r.foot}</div>` : ''}</div></div>`;
 }
 const qtyBox = (quick) => `<div class="qty"><button data-act="qty" data-arg="-1" aria-label="줄이기">${icon('minus', 16)}</button>
   <input type="number" inputmode="decimal" min="0" data-input="qty" value="${UI.qty}" aria-label="수량"><button data-act="qty" data-arg="1" aria-label="늘리기">${icon('plus', 16)}</button></div>
@@ -278,7 +279,7 @@ const cashQuick = () => [['10만', 100000], ['100만', 1000000], ['1000만', 100
 function stocksSheet() {
   const chips = `<div class="chips">${TABS.map(t => { const open = tabOpen(t.id);
     return `<button class="${UI.ftab === t.id ? 'on' : ''} ${open ? '' : 'locked'}" data-act="ftab" data-arg="${t.id}">${open ? '' : icon('lock', 13)}${t.label}</button>`; }).join('')}</div>`;
-  if (UI.sel && TK[UI.sel]) return { title: tkName(UI.sel), back: 'unsel', body: tickerDetail(UI.sel) };
+  if (UI.sel && TK[UI.sel]) return { title: tkName(UI.sel), back: 'unsel', body: tickerDetail(UI.sel), foot: orderCard(UI.sel) };   // 주문창은 아래에 붙어 있다
   let body;
   if (!tabOpen(UI.ftab)) { const t = TABS.find(x => x.id === UI.ftab); body = `<div class="note">${icon('lock', 14)} ${t.why || ''} · ${t.open.replace('-', '년 ')}월에 열립니다.</div>`; }
   else if (UI.ftab === 'FUT') body = futuresView();
@@ -344,8 +345,7 @@ function tickerDetail(id) {
       ${tickerChart(id, adj)}${revealBox(id, mi => adj[mi], v => fmtPrice(id, v))}</div>
     ${h ? `<div class="card"><h3>보유</h3><div class="kv"><b>수량</b><span class="num">${fmtQty(id, h.q)}</span><b>평균 단가</b><span class="num">${fmtWon(h.cost / h.q)}</span>
       <b>평가액</b><span class="num">${fmtWon(h.q * u)}</span><b>손익</b><span class="num ${pctCls(h.q * u - h.cost)}">${fmtSigned(h.q * u - h.cost)} (${fmtPct((h.q * u / h.cost - 1) * 100)})</span></div></div>` : ''}
-    ${costCard(id)}
-    ${orderCard(id)}`;
+    ${costCard(id)}`;
 }
 const pct3 = r => +(r * 100).toFixed(3) + '%';
 // 배당과 거래 비용 안내
@@ -379,12 +379,13 @@ function orderCard(id) {
   const sell = UI.side === 'sell', max = orderMax(id), step = qtyStep(id);
   UI.qty = Math.min(UI.qty, max);
   const why = sell ? '보유 수량이 없습니다.' : canTrade(id) || '현금이 부족하거나 한 종목 한도에 닿았습니다.';
-  return `<div class="card"><div class="seg wide side"><button class="${sell ? '' : 'on buy'}" data-act="side" data-arg="buy">매수</button><button class="${sell ? 'on sell' : ''}" data-act="side" data-arg="sell">매도</button></div>
-    <div class="sub" style="margin:10px 0 4px">${sell ? `보유 ${fmtQty(id, max)}` : `살 수 있는 최대 ${fmtQty(id, max)} · 현금 ${fmtWon(S.cash)}`}</div>
+  return `<div class="dock">
+    <div class="dock-row"><div class="seg side"><button class="${sell ? '' : 'on buy'}" data-act="side" data-arg="buy">매수</button><button class="${sell ? 'on sell' : ''}" data-act="side" data-arg="sell">매도</button></div>
+      <span class="sub num dock-info">${sell ? `보유 ${fmtQty(id, max)}` : `최대 ${fmtQty(id, max)} · 현금 ${fmtWon(S.cash)}`}</span></div>
     ${max > 0 ? `<input type="range" class="qty-range ${sell ? 'sell' : 'buy'}" min="0" max="${max}" step="${step}" value="${UI.qty}" data-input="qty" aria-label="수량">
-      <div class="row" style="align-items:baseline;margin-top:2px"><b class="num qty-big" id="qtyLabel">${fmtQty(id, UI.qty)}</b><span class="sp"></span><span class="num sub" id="estLabel">${tradeEst(id)}</span></div>
-      <div class="quick q4" style="margin-top:8px">${[[0.1, '10%'], [0.25, '25%'], [0.5, '50%'], [1, '최대']].map(([p, l]) => `<button data-act="pct" data-arg="${p}">${l}</button>`).join('')}</div>
-      <button class="btn ${sell ? 'sell' : 'buy'}" id="tradeBtn" style="width:100%;margin-top:10px" data-act="trade" data-arg="${id}" ${UI.qty > 0 ? '' : 'disabled'}>${sell ? '매도하기' : '매수하기'}</button>`
+      <div class="dock-row"><b class="num qty-big" id="qtyLabel">${fmtQty(id, UI.qty)}</b><span class="num sub dock-est" id="estLabel">${tradeEst(id)}</span></div>
+      <div class="dock-row"><div class="quick q4">${[[0.1, '10%'], [0.25, '25%'], [0.5, '50%'], [1, '최대']].map(([p, l]) => `<button data-act="pct" data-arg="${p}">${l}</button>`).join('')}</div>
+        <button class="btn ${sell ? 'sell' : 'buy'} dock-go" id="tradeBtn" data-act="trade" data-arg="${id}" ${UI.qty > 0 ? '' : 'disabled'}>${sell ? '매도하기' : '매수하기'}</button></div>`
       : `<div class="note">${why}</div>`}
   </div>`;
 }
@@ -501,6 +502,80 @@ function estateSheet() {
     <div class="note">취득세·수수료 ${ESTATE_BUY_COST * 100}% · 월세 연 ${rentYield(MARKET.m.cd[S.mi] || 3).toFixed(1)}% · 전세가율 ${Math.round(anchorAt(JEONSE_RATE, S.mi) * 100)}% · 보유세 연 ${ESTATE_HOLD_TAX * 100}% · 팔 때 차익의 ${ESTATE_GAIN_TAX * 100}% 세금${haggle() ? ` · 매력 협상으로 사고팔 때 ${(haggle() * 100).toFixed(1)}% 유리` : ''} · 사진을 누르면 시세 · 시세는 공개 시세 흐름 기반 추정치</div>
     <div class="est-grid">${cards}</div>` };
 }
+// ---- 결과 창: 매도 체결 · 분기/연간 결산 ----
+const wonRow = ([l, v, strong]) => `<b>${l}</b><span class="num${strong ? ' strong' : ''}">${v < 0 ? '-' + fmtWon(-v) : fmtWon(v)}</span>`;
+const signRow = ([l, v]) => `<b>${l}</b><span class="num ${pctCls(v)}">${fmtSigned(v)}</span>`;
+function popHTML(p) {
+  return `<div class="pop" data-act="popScrim"><div class="pop-card ${p.kind}">${p.kind === 'report' ? reportHTML(p) : soldHTML(p)}
+    <button class="btn" data-act="popClose">확인</button></div></div>`;
+}
+function soldHTML(p) {
+  const pct = p.cost > 0 ? p.pl / p.cost * 100 : 0, c = pctCls(p.pl);
+  return `<div class="pop-ic ${c}">${icon('check', 26)}</div>
+    <small class="pop-kind">${p.title}</small><h3>${p.name}</h3><div class="sub num">${p.what}</div>
+    <div class="pop-big num ${c}">${fmtSigned(p.pl)}<small>${fmtPct(pct)}</small></div>
+    <div class="sub">${c === 'up' ? '이득을 봤습니다.' : c === 'down' ? '손해를 봤습니다.' : '본전입니다.'}</div>
+    <div class="kv">${p.rows.map(wonRow).join('')}</div>`;
+}
+// 막대: 위는 늘어난 만큼, 아래는 줄어든 만큼
+function barsHTML(steps) {
+  const max = Math.max(1, ...steps.map(s => Math.abs(s.v || 0)));
+  return `<div class="bars">${steps.map(s => { const h = s.v ? Math.max(3, Math.abs(s.v) / max * 100).toFixed(1) : 0;
+    return `<div class="barcol"><div class="bhalf hi">${s.v > 0 ? `<i class="bu" style="height:${h}%"></i>` : ''}</div><div class="bhalf lo">${s.v < 0 ? `<i class="bd" style="height:${h}%"></i>` : ''}</div>
+      <b>${s.l}</b><span class="num ${s.v == null ? 'muted' : pctCls(s.v)}">${s.v == null ? '-' : fmtSigned(s.v)}</span></div>`; }).join('')}</div>`;
+}
+function reportHTML(r) {
+  const parts = r.parts.filter(x => x[1] != null && Math.abs(x[1]) >= 1), flows = r.flows.filter(x => x[1] != null && Math.abs(x[1]) >= 1);
+  return `<small class="pop-kind">${r.title}</small><h3>${r.sub} 재산이 ${r.chg >= 0 ? '늘었습니다' : '줄었습니다'}</h3>
+    <div class="pop-big num ${pctCls(r.chg)}">${fmtSigned(r.chg)}${r.pct != null ? `<small>${fmtPct(r.pct)}</small>` : ''}</div>
+    <div class="sub num">순자산 ${fmtWon(r.nw0)} → <b>${fmtWon(r.nw1)}</b></div><div class="sub">같은 기간 코스피 ${pctSpan(r.kospi)}</div>
+    ${barsHTML(r.steps)}
+    ${parts.length ? `<div class="kv"><b class="kv-h">어디서 바뀌었나</b><span></span>${parts.map(signRow).join('')}</div>` : ''}
+    ${flows.length ? `<div class="kv"><b class="kv-h">이 기간의 돈 흐름</b><span></span>${flows.map(signRow).join('')}</div>` : ''}`;
+}
+
+// ---- 상세 재무 내역 ----
+function financeSheet() {
+  const b = breakdown(), nw = netWorth(), debt = b.loan + b.jdep;
+  const nRe = Object.values(S.re).reduce((s, r) => s + r.q, 0), nLux = Object.values(S.lux).reduce((s, n) => s + n, 0);
+  const note = { estate: nRe ? nRe + '채' : '', lux: nLux ? nLux + '점' : '', dep: S.bank.dep ? '연 ' + depRate().toFixed(1) + '%' : '', fut: Object.keys(S.fut).length ? Object.keys(S.fut).length + '종목' : '', opt: S.opt.length ? S.opt.length + '건' : '', bond: S.bonds.length ? S.bonds.length + '건' : '' };
+  const rows = ASSET_ROWS.map(([k, l, c]) => [k, l, c, b[k]]).filter(r => Math.abs(r[3]) >= 1);
+  const totA = rows.reduce((s, r) => s + Math.max(0, r[3]), 0) || 1;
+  const ago = n => { const h = histAt(S.mi - n); return h && h.mi === S.mi - n ? nw - h.nw : null; };
+  const cmp = [['이번 달', nw - S.monthStartNW], ['3개월 전보다', ago(3)], ['1년 전보다', ago(12)]].filter(x => x[1] != null);
+  const fl = monthFlow(), inc = fl.inc.reduce((s, r) => s + r[1], 0), out = fl.out.reduce((s, r) => s + r[1], 0), j = jobInfo();
+  // 기간별 재산 변화: 최근 분기 8개 또는 해마다
+  const first = S.hist[0].mi, per = [];
+  if (UI.finP === 'y') for (let y = yearOf(S.mi); y >= yearOf(first); y--) { const m0 = Math.max(first, miOf(y + '-01')), m1 = Math.min(S.mi, miOf((y + 1) + '-01')); if (m1 > m0) per.push([y + '년', m0, m1, 'year', m1 === S.mi && month() !== 1]); }
+  else { let m1 = S.mi; for (let k = 0; k < 8; k++) { const m0 = Math.max(first, m1 - ((+ymOf(m1).slice(5) - 1) % 3 || 3)); if (m0 >= m1) break; const ym = ymOf(m0); per.push([ym.slice(0, 4) + '년 ' + Math.ceil(+ym.slice(5) / 3) + '분기', m0, m1, 'q', m1 === S.mi && (+ymOf(S.mi).slice(5) - 1) % 3 !== 0]); m1 = m0; } }
+  const perRows = per.map(([l, m0, m1, k, live]) => { const a = histAt(m0), z = m1 === S.mi ? { nw } : histAt(m1), d = z.nw - a.nw;
+    return `<button class="li per" data-act="report" data-arg="${m0}:${m1}:${k}" ${live ? 'disabled' : ''}><div class="nm"><em>${l}</em>${live ? '<span class="badge lock">진행 중</span>' : ''}</div>
+      <div class="pr num ${pctCls(d)}">${fmtSigned(d)}</div><div class="ds num">${fmtWon(a.nw)} → ${fmtWon(z.nw)}</div><div class="ch num">${a.nw > 0 ? pctSpan((z.nw / a.nw - 1) * 100) : ''}</div></button>`; }).join('');
+  const body = `<div class="card"><h3>순자산 <span class="r">자산 - 빚</span></h3>
+      <div class="big num">${fmtWon(nw, false)}</div><div class="sub num">${fmtWon(nw, true)}</div>
+      <div class="kv" style="margin-top:8px"><b>자산 합계</b><span class="num">${fmtWon(totA)}</span><b>빚 합계</b><span class="num ${debt ? 'bad' : ''}">${debt ? '-' + fmtWon(debt) : '0원'}</span>
+        ${cmp.map(signRow).join('')}</div></div>
+    <div class="card"><h3>자산 <span class="r">${rows.length}가지</span></h3>
+      <div class="stack">${rows.filter(r => r[3] > 0).map(r => `<i style="width:${(r[3] / totA * 100).toFixed(2)}%;background:${r[2]}"></i>`).join('')}</div>
+      <div class="fin-rows">${rows.map(([k, l, c, v]) => `<div class="fin-row"><i style="background:${c}"></i><b>${l}${note[k] ? ` <small class="muted">${note[k]}</small>` : ''}</b><span class="num">${fmtWon(v)}</span><small class="num muted">${(Math.max(0, v) / totA * 100).toFixed(1)}%</small></div>`).join('')}</div></div>
+    <div class="card"><h3>빚</h3>${debt ? `<div class="kv">
+      ${b.loan ? `<b>대출 <small class="muted">연 ${loanRate().toFixed(2)}%</small></b><span class="num bad">-${fmtWon(b.loan)}</span>` : ''}
+      ${b.jdep ? `<b>전세 보증금 <small class="muted">돌려줄 돈</small></b><span class="num bad">-${fmtWon(b.jdep)}</span>` : ''}</div>` : '<div class="sub">빚이 없습니다.</div>'}</div>
+    <div class="card"><h3>투자 손익 <span class="r">누계</span></h3><div class="kv">
+      ${signRow(['평가 손익 (지금 다 팔면)', unrealized()])}${signRow(['실현 손익', S.realized])}
+      ${signRow(['받은 배당 (세후)', S.divTotal])}${signRow(['받은 월세', S.rentTotal])}${signRow(['받은 이자 (세후)', S.intTotal])}
+      ${wonRow(['낸 수수료', -S.feePaid])}${wonRow(['낸 세금', -S.taxPaid])}</div></div>
+    <div class="card"><h3>이번 달 현금 흐름 <span class="r">달이 바뀔 때 · 예상</span></h3><div class="kv">
+      ${fl.inc.map(([l, v]) => `<b>${l}</b><span class="num good">+${fmtWon(v)}</span>`).join('')}
+      ${fl.out.map(([l, v]) => `<b>${l}</b><span class="num bad">-${fmtWon(v)}</span>`).join('')}
+      ${fl.inc.length + fl.out.length ? signRow(['합계', inc - out]) : '<b>정해진 수입·지출이 없습니다</b><span></span>'}</div>
+      ${j.pay ? `<div class="sub" style="margin-top:6px">일하기 1번에 +${fmtWon(j.pay)} (${j.name}, 달마다 ${ACTIONS.work.perMonth}번까지)</div>` : ''}</div>
+    <div class="card"><h3>기간별 재산 변화 <span class="r">눌러서 결산 보기</span></h3>
+      <div class="seg wide" style="margin-bottom:8px">${[['q', '분기별'], ['y', '연도별']].map(([k, l]) => `<button class="${UI.finP === k ? 'on' : ''}" data-act="finP" data-arg="${k}">${l}</button>`).join('')}</div>
+      <div class="list">${perRows || '<div class="sub">아직 지난 기간이 없습니다.</div>'}</div></div>`;
+  return { title: '상세 재무 내역', body };
+}
+
 // ---- 부동산 관리 ----
 const homeLabel = () => S.home ? EST[S.home].name + ' (자가)' : age() < 20 ? '부모님 집' : '셋집';
 const homeFxText = (t = homeTier()) => Object.entries(t.fx).map(([k, v]) => STAT_NAME[k] + ' +' + v).concat(age() >= 20 ? ['생활비 -' + HOME_SAVE * 100 + '%'] : []).join(' · ');
@@ -742,6 +817,8 @@ function titleHTML() {
 }
 
 // ---- 동작 ----
+// 팔았으면 저장하고 결과 창을 띄운다
+function sold(r) { if (r.ok) { save(); if (r.v && r.v.kind === 'sold') UI.pops.push(r.v); } render(); }
 const ACT = {
   tab(t) { UI.tab = t; UI.bubble = ''; render(); },
   sheet(s) { UI.sheet = s; UI.giftOpen = false; UI.confirmNew = false; if (s === 'stocks' && !UI.sel) UI.sel = null; render(); },
@@ -752,7 +829,7 @@ const ACT = {
   sel(id) { UI.sel = id; UI.qty = 0; UI.side = 'buy'; render(); },
   side(s) { UI.side = s; UI.qty = 0; render(); },
   pct(p) { const id = UI.sel, max = orderMax(id); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(qtyStep(id), roundQty(id, max * p))); render(); },
-  trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) { UI.qty = 0; save(); } render(); },
+  trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) UI.qty = 0; sold(r); },
   shopTab(t) { UI.shopTab = t; render(); },
   shopOpen() { UI.sheet = 'shop'; UI.shopTab = 'gear'; render(); },
   gearBuy(id) { const r = buyGear(id); if (r.ok) { toast(GR[id].name + (r.v ? '을(를) 입었습니다.' : '을(를) 샀습니다. 상태 탭에서 입을 수 있습니다.')); save(); } render(); },
@@ -766,30 +843,34 @@ const ACT = {
   qtySet(v) { UI.qty = v === 'max' ? Math.max(UI.sel && isCoin(UI.sel) ? 0.0001 : 1, maxBuy(UI.sel)) : +v; render(); },
   amtSet(v) { UI.amt = +v; render(); },
   buy(id) { if (buy(id, UI.qty).ok) { save(); } render(); },
-  sell(id) { if (sell(id, UI.qty).ok) save(); render(); },
-  sellAll(id) { if (S.hold[id] && sell(id, S.hold[id].q).ok) save(); render(); },
+  sell(id) { sold(sell(id, UI.qty)); },
+  sellAll(id) { if (S.hold[id]) sold(sell(id, S.hold[id].q)); },
   reveal(key) { if (revealNext(key, revealLabel(key)).ok) save(); render(); },
   revealN(a) { const i = a.lastIndexOf('|'), key = a.slice(0, i), m = +a.slice(i + 1); if ((m === 1 ? revealNext(key, revealLabel(key)) : revealUpTo(key, m, revealLabel(key))).ok) save(); render(); },
   estSel(id) { UI.estSel = UI.estSel === id ? null : id; render(); },
   pview(v) { UI.pview = v; render(); },
   futOpen(a) { const [fid, d] = a.split(':'); if (openFut(fid, +d, UI.qty).ok) save(); render(); },
-  futClose(fid) { closeFut(fid); save(); render(); },
+  futClose(fid) { sold(closeFut(fid)); },
   optBuy(a) { const [t, k] = a.split(':'); if (buyOpt(t, +k, UI.qty).ok) save(); render(); },
-  optSell(i) { sellOpt(+i); save(); render(); },
+  optSell(i) { sold(sellOpt(+i)); },
   bondBuy(b) { if (buyBond(b, UI.amt).ok) save(); render(); },
-  bondSell(u) { sellBond(+u); save(); render(); },
+  bondSell(u) { sold(sellBond(+u)); },
   dep() { deposit(Math.min(UI.amt, S.cash)); save(); render(); },
   wd() { withdraw(UI.amt); save(); render(); },
   borrow() { borrow(UI.amt); save(); render(); },
   repay() { repay(UI.amt); save(); render(); },
   estBuy(id) { const isNew = !S.re[id]; if (buyEstate(id).ok) { save(); if (isNew) toast('샀습니다. 부동산 관리에서 들어가 살거나 세를 놓으세요.'); } render(); },
-  estSell(id) { sellEstate(id); save(); render(); },
+  estSell(id) { sold(sellEstate(id)); },
   lease(arg) { const [id, m] = arg.split(':'); if (setLease(id, m).ok) save(); render(); },
   live(id) { if (moveIn(id).ok) save(); render(); },
   leave() { if (moveOut().ok) save(); render(); },
   estMgrBack() { UI.sheet = 'estate'; render(); },
   luxBuy(id) { if (buyLux(id).ok) save(); render(); },
-  luxSell(id) { sellLux(id); save(); render(); },
+  luxSell(id) { sold(sellLux(id)); },
+  popClose() { UI.pops.shift(); afterTurn(); },
+  popScrim(_, el, ev) { if (ev && ev.target === el) ACT.popClose(); },
+  report(a) { const [m0, m1, k] = a.split(':'); const r = periodReport(+m0, +m1, k); if (r) UI.pops.push(r); render(); },
+  finP(k) { UI.finP = k; render(); },
   shopBuy(id) { if (buyShop(id).ok) { toast(ITEM[id].name + '을(를) 샀습니다.'); save(); } render(); },
   person(id) { UI.sheet = 'person'; UI.sel = id; UI.giftOpen = false; render(); },
   talk(id) { const r = talk(id); if (r.ok) UI.say[id] = r.v; afterTurn(); },
@@ -820,7 +901,8 @@ const ACT = {
     if (canAct && !UI.confirmNext) { UI.confirmNext = true; toast(`체력이 ${Math.round(S.sta)} 남았습니다. 한 번 더 누르면 다음 달로 넘어갑니다.`); return render(); }
     UI.confirmNext = false;
     const r = nextMonth();
-    if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`; save(); }
+    if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`; save();
+      const rep = !S.ended && periodDue(); if (rep) UI.pops.push(rep); }   // 분기·해가 바뀌면 결산 창
     afterTurn();
   },
   storyTap(_, el, ev) {

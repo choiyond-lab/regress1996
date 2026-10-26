@@ -561,6 +561,53 @@ expect(swing('gme', '2020-12', '2021-01') > 5, '29-7 게임스탑 2021년 1월 �
 expect(swing('shinpoong', '2020-01', '2020-09') > 10, '29-8 신풍제약 2020년 폭등 ×' + swing('shinpoong', '2020-01', '2020-09').toFixed(1));
 expect(swing('aig', '2007-12', '2009-03') < 0.1, '29-9 AIG 2008년 폭락');
 
+// ---------- 32. 매도 결과 창 · 결산 · 고정 주문창 · 상세 재무 ----------
+fresh(); at('2005-06'); S.cash = 1e10; S.flags.account = true;
+buy('ss', 10);
+let r32 = sell('ss', 4);
+expect(r32.ok && r32.v.kind === 'sold' && Math.abs(r32.v.pl - (r32.v.rows.find(x => x[0] === '받은 돈')[1] - r32.v.cost)) < 1, '32-1 주식 매도 결과 (손익 = 받은 돈 - 산 금액)');
+UI.pops = []; UI.sheet = 'stocks'; UI.ftab = 'KS'; UI.sel = 'ss'; UI.side = 'sell'; UI.qty = 2;
+h = draw('32 고정 주문창', () => {});
+expect(/class="sheet-foot"/.test(h) && h.indexOf('data-act="trade"') > h.indexOf('class="sheet-foot"'), '32-2 주문창이 시트 아래 고정 영역에');
+h = draw('32 매도 결과 창', () => ACT.trade('ss'));
+expect(UI.pops.length === 1 && /class="pop"/.test(h) && /매도 체결/.test(h) && /data-act="popClose"/.test(h), '32-3 매도하면 가운데 결과 창');
+ACT.popClose(); h = els.phone.innerHTML;
+expect(!UI.pops.length && !/class="pop"/.test(h), '32-4 확인을 누르면 닫힘');
+buyEstate('eunma'); buyLux(LUXURY[0].id);
+expect(sellEstate('eunma').v.kind === 'sold' && sellLux(LUXURY[0].id).v.kind === 'sold', '32-5 부동산·명품 판매 결과');
+// 분기·연간 결산
+fresh(); S.flags.account = true; S.cash = 1e7;
+while (ymOf(S.mi) !== '1996-12') next();
+const nw32 = histAt(S.mi - 2);
+next();
+let rep32 = periodDue();
+expect(ymOf(S.mi) === '1997-01' && rep32 && rep32.period === 'year' && rep32.steps.length === 4 && rep32.title === '1996년 결산', '32-6 해가 바뀌면 연간 결산');
+expect(Math.abs(rep32.parts.reduce((s, x) => s + (x[1] || 0), 0) - rep32.chg) < 5, '32-7 결산의 갈래 합 = 순자산 변화');
+next(); next(); next();
+rep32 = periodDue();
+expect(ymOf(S.mi) === '1997-04' && rep32.period === 'q' && rep32.title === '1997년 1분기 결산' && rep32.steps.length === 3, '32-8 분기 결산');
+next(); expect(periodDue() === null, '32-9 분기 중간에는 결산 없음');
+// 다음 달 버튼으로 넘기면 결산 창이 이야기보다 먼저
+while (month() !== 6) next();
+S.sta = 0; UI.confirmNext = true; UI.pops = []; UI.sheet = null; RUN = null;
+h = draw('32 결산 창', () => ACT.next());
+expect(UI.pops.length === 1 && UI.pops[0].kind === 'report' && /1997년 2분기 결산/.test(h) && /class="bars"/.test(h), '32-10 다음 달 버튼 → 결산 창');
+ACT.popClose(); playStory();
+// 상세 재무 내역
+UI.tab = 'invest'; UI.sheet = null; h = draw('32 투자 탭', () => {});
+expect(/data-arg="finance"/.test(h) && /상세 재무 내역/.test(h), '32-11 투자 평가액 → 상세 재무');
+UI.sheet = 'finance'; h = draw('32 상세 재무', () => {});
+expect(/순자산/.test(h) && /투자 손익/.test(h) && /이번 달 현금 흐름/.test(h) && /data-act="report"/.test(h), '32-12 상세 재무 내역 화면');
+h = draw('32 연도별', () => ACT.finP('y'));
+expect(/1996년/.test(h) && /data-act="report" data-arg="\d+:\d+:year"/.test(h), '32-13 연도별 재산 변화');
+const a32 = /data-act="report" data-arg="([^"]+)"/.exec(h)[1];
+h = draw('32 지난 결산 다시 보기', () => ACT.report(a32));
+expect(UI.pops.length === 1 && /결산/.test(h), '32-14 지난 기간을 누르면 결산 창');
+UI.pops = []; UI.sheet = null; UI.tab = 'main'; UI.finP = 'q';
+// 옛 기록(갈래 없음)도 결산이 깨지지 않는다
+for (const x of S.hist) { delete x.liq; delete x.inv; }
+expect(periodReport(S.mi - 3, S.mi, 'q').parts[0][1] === null, '32-15 옛 기록도 결산');
+
 // ---------- 31. 부동산 관리: 거주·월세·전세 ----------
 fresh(); at('2016-06'); S.cash = 5e10; S.st.hp = 20; S.st.cha = 20;
 buyEstate('sanggye'); buyEstate('apgu'); buyEstate('apgu'); buyEstate('apgu');

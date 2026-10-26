@@ -23,6 +23,7 @@ const ICON_PATHS = {
   back: '<path d="M15 5 8 12l7 7"/>',
   spark: '<path d="M12 3v4M12 17v4M3 12h4M17 12h4M6 6l2.5 2.5M15.5 15.5 18 18M6 18l2.5-2.5M15.5 8.5 18 6"/>',
   plus: '<path d="M12 5v14M5 12h14"/>',
+  check: '<path d="m5 12.5 4.5 4.5L19 7.5"/>',
   key: '<circle cx="8" cy="15" r="4"/><path d="m11 12 9-9M16.5 5.5l3 3M14 8l2 2"/>',
   minus: '<path d="M5 12h14"/>',
 };

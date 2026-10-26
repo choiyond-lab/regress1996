@@ -60,7 +60,7 @@ function newGame(opts) {
     hold: {}, fut: {}, opt: [], bonds: [], bank: { dep: 0, loan: 0 }, re: {}, home: null, lux: {}, luxCost: {}, inv: {},
     flags: {}, people: {}, reveal: {}, gear: {}, equip: {}, bets: [], betMem: {},
     log: [], hist: [], queue: [], done: {}, uid: 1,
-    job: null, jobSince: 0, edu: null, realized: 0, divTotal: 0, feePaid: 0, taxPaid: 0, usGain: {}, ended: false, hints: [], lotto: null, lottoLast: null,
+    job: null, jobSince: 0, edu: null, realized: 0, divTotal: 0, rentTotal: 0, intTotal: 0, feePaid: 0, taxPaid: 0, usGain: {}, ended: false, hints: [], lotto: null, lottoLast: null,
     monthStartNW: 0, tab: 'main', theme: 'system', textSpeed: 1,
   };
   for (const c of CHARS) if (c.meet === 'start') meet(c.id, true);
@@ -77,7 +77,9 @@ function log(text, kind) {
   if (S.log.length > 400) S.log.length = 400;
 }
 function record() {
-  const h = { mi: S.mi, nw: Math.round(netWorth()), cash: Math.round(S.cash) };
+  const b = breakdown(), r = Math.round;
+  const h = { mi: S.mi, nw: r(netWorth()), cash: r(S.cash), liq: r(b.cash + b.dep), inv: r(b.KS + b.KQ + b.US + b.ETF + b.COIN + b.fut + b.opt + b.bond),
+    re: r(b.estate), lux: r(b.lux), debt: r(b.loan + b.jdep), rl: r(S.realized), dv: r(S.divTotal), rent: r(S.rentTotal), it: r(S.intTotal), cost: r(S.feePaid + S.taxPaid) };
   const last = S.hist[S.hist.length - 1];
   if (last && last.mi === S.mi) S.hist[S.hist.length - 1] = h; else S.hist.push(h);
 }
@@ -200,7 +202,8 @@ function sell(id, q) {
   h.q -= q; h.cost -= costPart;
   if (h.q < 1e-6) delete S.hold[id];
   log(`${tkName(id)} ${fmtQty(id, q)} 매도 · ${fmtWon(net)} (손익 ${fmtSigned(net - costPart)})`, net >= costPart ? 'good' : 'bad');
-  return ok();
+  return ok({ kind: 'sold', title: '매도 체결', name: tkName(id), what: `${fmtQty(id, q)} × ${fmtPrice(id, price(id))}`, pl: net - costPart, cost: costPart,
+    rows: [['판 금액', gross], ['수수료', -fee], ...(tax ? [['거래세', -tax]] : []), ['받은 돈', net, 1], ['산 금액 (평단 × 수량)', costPart]] });
 }
 function holdValue(id) { const h = S.hold[id]; return h && listed(id) ? h.q * unitKRW(id) : 0; }
 
@@ -234,7 +237,8 @@ function closeFut(fid, forced) {
   S.cash += pos.margin + pl - fee; S.realized += pl - fee; S.feePaid += fee;
   delete S.fut[fid];
   log(`${FUT[fid].name} ${forced ? '강제 청산' : '청산'} · 손익 ${fmtSigned(pl)}`, pl >= 0 ? 'good' : 'bad');
-  return ok();
+  return ok({ kind: 'sold', title: '청산 체결', name: FUT[fid].name, what: `${pos.dir > 0 ? '매수' : '매도'} ${pos.q}계약 · ${futPrice(fid).toFixed(2)}`, pl: pl - fee, cost: pos.margin,
+    rows: [['맡긴 증거금', pos.margin], ['가격 손익', pl], ['수수료', -fee], ['받은 돈', pos.margin + pl - fee, 1]] });
 }
 function checkMargin() {
   for (const fid of Object.keys(S.fut)) {
@@ -289,7 +293,8 @@ function sellOpt(i) {
   const fee = optValue(o) * OPT_FEE, v = optValue(o) * 0.97 - fee;
   S.cash += v; S.realized += v - o.cost; S.feePaid += fee; S.opt.splice(i, 1);
   log(`코스피200 ${o.type === 'C' ? '콜' : '풋'} ${o.K} 매도 · 손익 ${fmtSigned(v - o.cost)}`, v >= o.cost ? 'good' : 'bad');
-  return ok();
+  return ok({ kind: 'sold', title: '매도 체결', name: `코스피200 ${o.type === 'C' ? '콜' : '풋'} ${o.K}`, what: `${o.q}계약`, pl: v - o.cost, cost: o.cost,
+    rows: [['수수료', -fee], ['받은 돈', v, 1], ['산 금액', o.cost]] });
 }
 // 월말 정산 때 부른다. 다음 달 종가로 만기 정산한다 (마지막 달이면 이번 달 종가)
 function settleOptions() {
@@ -332,7 +337,7 @@ function sellBond(u) {
   const pos = S.bonds[i], v = bondValue(pos) * 0.998, cost = pos.face * (BOND[pos.b].cur === 'USD' ? MARKET.m.fx[pos.mi0] : 1);
   S.cash += v; S.realized += v - cost; S.bonds.splice(i, 1);
   log(`${BOND[pos.b].name} 매도 · ${fmtWon(v)}`, v >= cost ? 'good' : 'bad');
-  return ok();
+  return ok({ kind: 'sold', title: '매도 체결', name: BOND[pos.b].name, what: '만기 전 매도', pl: v - cost, cost, rows: [['받은 돈', v, 1], ['산 금액', cost]] });
 }
 
 // ---- 은행 ----
@@ -389,14 +394,15 @@ function sellEstate(id) {
   const r = S.re[id]; if (!r) return fail('보유하지 않았습니다.');
   const n = rentN(id), wasHome = n <= 0;   // 세 놓은 집부터 팔고, 그것밖에 없으면 살던 집을 판다
   const back = !wasHome && r.mode === 'jeonse' ? r.dep / n : 0;   // 세입자 낀 채로 팔면 사는 사람이 보증금을 떠안는다
-  const p = estatePrice(id), avg = r.cost / r.q, proceeds = p * (1 + haggle()) * (1 - ESTATE_SELL_COST);
+  const p = estatePrice(id), avg = r.cost / r.q, gross = p * (1 + haggle()), proceeds = gross * (1 - ESTATE_SELL_COST);
   const tax = Math.max(0, proceeds - avg) * ESTATE_GAIN_TAX, net = proceeds - tax;
   S.cash += net - back; r.dep -= back; S.realized += net - avg;
   r.q -= 1; r.cost -= avg;
   if (wasHome) S.home = null;
   if (r.q <= 0) delete S.re[id];
   log(`${EST[id].name} 매도 · ${fmtWon(net)} (양도세 ${fmtWon(tax)})${back ? ' · 전세 보증금 ' + fmtWon(back) + '은 산 사람이 떠안음' : ''}${wasHome ? ' · 살던 집이라 이사 나옴' : ''}`, net >= avg ? 'good' : 'bad');
-  return ok();
+  return ok({ kind: 'sold', title: '매도 체결', name: EST[id].name, what: `1채 · 시세 ${fmtWon(p)}${wasHome ? ' · 살던 집' : ''}`, pl: net - avg, cost: avg,
+    rows: [['판 금액', gross], ['중개수수료', -(gross - proceeds)], ['양도세', -tax], ...(back ? [['전세 보증금 (산 사람이 떠안음)', -back]] : []), ['받은 돈', net - back, 1], ['산 금액', avg]] });
 }
 
 // ---- 부동산 관리: 거주와 임대 ----
@@ -519,7 +525,7 @@ function sellLux(id) {
   S.cash += v; S.realized += v - avg;
   S.lux[id]--; S.luxCost[id] -= avg; if (!S.lux[id]) { delete S.lux[id]; delete S.luxCost[id]; }
   log(`${LUX[id].name} 판매 · ${fmtWon(v)}`, v >= avg ? 'good' : 'bad');
-  return ok();
+  return ok({ kind: 'sold', title: '판매 완료', name: LUX[id].name, what: '1점', pl: v - avg, cost: avg, rows: [['판 금액', v, 1], ['산 금액', avg]] });
 }
 function luxCha() { let c = 0; for (const id of Object.keys(S.lux)) c += LUX[id].cha; return c; }
 
@@ -634,7 +640,7 @@ function monthEnd() {
   const si = snsIncome(); if (si) { S.cash += si; parts.push('SNS 수입 +' + fmtWon(si)); }
   if (!S.mo.sns && S.st.fame > 0) S.st.fame = Math.max(0, S.st.fame - FAME_DECAY);   // 글을 안 올리면 잊힌다
   const lc = livingCost(); if (lc) { S.cash -= lc; parts.push('생활비 -' + fmtWon(lc)); }
-  if (S.bank.dep > 0) { const it = S.bank.dep * depRate() / 1200 * (1 - INTEREST_TAX); S.bank.dep += it; parts.push('예금 이자 +' + fmtWon(it)); }
+  if (S.bank.dep > 0) { const it = S.bank.dep * depRate() / 1200 * (1 - INTEREST_TAX); S.bank.dep += it; S.intTotal += it; parts.push('예금 이자 +' + fmtWon(it)); }
   if (S.bank.loan > 0) { const it = S.bank.loan * loanRate() / 1200; S.cash -= it; parts.push('대출 이자 -' + fmtWon(it)); }
   let cp = 0;
   S.bonds = S.bonds.filter(pos => {
@@ -643,9 +649,9 @@ function monthEnd() {
     if (S.mi + 1 >= pos.mat) { S.cash += pos.face * bondFx(b); log(`${b.name} 만기 상환 · ${fmtWon(pos.face * bondFx(b))}`, 'good'); return false; }
     return true;
   });
-  if (cp) { S.cash += cp; parts.push('채권 이자 +' + fmtWon(cp)); }
+  if (cp) { S.cash += cp; S.intTotal += cp; parts.push('채권 이자 +' + fmtWon(cp)); }
   const ls = leaseMonth();
-  if (ls.rent) { S.cash += ls.rent; parts.push('월세 +' + fmtWon(ls.rent)); }
+  if (ls.rent) { S.cash += ls.rent; S.rentTotal += ls.rent; parts.push('월세 +' + fmtWon(ls.rent)); }
   if (ls.tax) { S.cash -= ls.tax; S.taxPaid += ls.tax; parts.push('보유세 -' + fmtWon(ls.tax)); }
   if (ls.empty) { S.cash -= ls.empty; parts.push('빈 집 관리비 -' + fmtWon(ls.empty)); }
   renewJeonse();
@@ -680,6 +686,52 @@ function newMonth(before) {
   const gain = netWorth() - S.monthStartNW;
   log(`${year()}년 ${month()}월 · 지난달보다 자산 ${fmtSigned(gain)}`, gain >= 0 ? 'good' : 'bad');
   record();
+}
+
+// ---- 결산 ----
+// 기록은 달이 시작될 때 남는다. 그 달 기록이 없으면(게임 시작 전) 처음 기록을 쓴다
+const histAt = mi => S.hist.find(h => h.mi >= mi);
+// 4·7·10월로 넘어오면 지난 분기, 1월이면 지난 한 해를 결산한다
+function periodDue() {
+  const m = month();
+  if (m === 1) return periodReport(S.mi - 12, S.mi, 'year');
+  if (m % 3 === 1) return periodReport(S.mi - 3, S.mi, 'q');
+  return null;
+}
+function periodReport(mi0, mi1, kind) {
+  const a = histAt(mi0), b = histAt(mi1);
+  if (!a || !b || a === b) return null;
+  const d = k => a[k] == null || b[k] == null ? null : b[k] - a[k];
+  const ym = ymOf(mi1 - 1), y = +ym.slice(0, 4), m = +ym.slice(5), q = Math.ceil(m / 3);
+  const step = (s, e, l) => { const x = histAt(s), z = histAt(e); return { l, v: x && z && x !== z && z.mi <= mi1 ? z.nw - x.nw : null }; };
+  const steps = kind === 'year' ? [0, 1, 2, 3].map(k => step(mi0 + k * 3, mi0 + k * 3 + 3, (k + 1) + '분기'))
+    : [0, 1, 2].map(k => step(mi0 + k, mi0 + k + 1, +ymOf(mi0 + k).slice(5) + '월'));
+  return { kind: 'report', period: kind, mi0: a.mi, mi1: b.mi,
+    title: kind === 'year' ? y + '년 결산' : `${y}년 ${q}분기 결산`,
+    sub: kind === 'year' ? `${y}년 한 해 동안` : `${q * 3 - 2}월부터 ${q * 3}월까지`,
+    nw0: a.nw, nw1: b.nw, chg: b.nw - a.nw, pct: a.nw > 0 ? (b.nw / a.nw - 1) * 100 : null,
+    kospi: (macroAt('kospi', b.mi) / macroAt('kospi', a.mi) - 1) * 100, steps,
+    parts: [['현금·예금', d('liq')], ['주식·파생·채권', d('inv')], ['부동산', d('re')], ['명품', d('lux')], ['빚 (대출·전세 보증금)', d('debt') == null ? null : -d('debt')]],
+    flows: [['실현 손익', d('rl')], ['배당', d('dv')], ['월세', d('rent')], ['이자', d('it')], ['수수료·세금', d('cost') == null ? null : -d('cost')]] };
+}
+// 지금 다 팔면 생길 손익 (아직 실현하지 않은 것)
+function unrealized() {
+  let s = 0;
+  for (const id of Object.keys(S.hold)) s += holdValue(id) - S.hold[id].cost;
+  for (const fid of Object.keys(S.fut)) s += futPL(fid);
+  for (const o of S.opt) s += optValue(o) - o.cost;
+  for (const pos of S.bonds) s += bondValue(pos) - pos.face * (BOND[pos.b].cur === 'USD' ? MARKET.m.fx[pos.mi0] : 1);
+  for (const id of Object.keys(S.re)) s += estatePrice(id) * S.re[id].q - S.re[id].cost;
+  for (const id of Object.keys(S.lux)) s += luxValue(id) * S.lux[id] - S.luxCost[id];
+  return s;
+}
+// 이번 달이 끝날 때 들어오고 나갈 돈 (예상)
+function monthFlow() {
+  const ls = leaseMonth();
+  let cp = 0; for (const pos of S.bonds) cp += pos.face * pos.y / 1200 * (1 - INTEREST_TAX) * bondFx(BOND[pos.b]);
+  const inc = [['SNS 수입', snsIncome()], ['예금 이자 (세후)', S.bank.dep * depRate() / 1200 * (1 - INTEREST_TAX)], ['채권 이자 (세후)', cp], ['월세', ls.rent]];
+  const out = [['생활비', livingCost()], ['대출 이자', S.bank.loan * loanRate() / 1200], ['부동산 보유세', ls.tax], ['빈 집 관리비', ls.empty]];
+  return { inc: inc.filter(r => r[1] >= 1), out: out.filter(r => r[1] >= 1) };
 }
 
 // ---- 자산 ----
