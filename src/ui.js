@@ -1,7 +1,7 @@
 // ===== 화면 =====
 // 화면 상태는 저장하지 않는다. 게임 상태는 S, 이야기 진행은 RUN 에 있다
 const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, confirmNext: false, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
-  typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q', order: null };
+  typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q', order: null, futLev: FUT_LEV };
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pad2 = n => String(n).padStart(2, '0');
@@ -391,11 +391,11 @@ function orderCard(id) {
 function futPosStrip(fid) {
   const pos = S.fut[fid]; if (!pos) return '';
   const pl = futPL(fid);
-  return `<div class="ord-pos"><span>${pos.dir > 0 ? '<b class="up">롱</b>' : '<b class="down">숏</b>'} ${pos.q}계약 · 진입 <b class="num">${pos.entry.toFixed(2)}</b><br><small class="muted num">증거금 ${fmtWon(pos.margin)}</small></span>
+  return `<div class="ord-pos"><span>${pos.dir > 0 ? '<b class="up">롱</b>' : '<b class="down">숏</b>'} <b>${pos.lev}배</b> ${pos.q}계약 · 진입 <b class="num">${pos.entry.toFixed(2)}</b><br><small class="muted num">증거금 ${fmtWon(pos.margin)} · 강제 청산 ${futCutPrice(fid).toFixed(2)}</small></span>
     <span class="num ${pctCls(pl)}"><b>${fmtSigned(pl)}</b><br><small>${fmtPct(pl / pos.margin * 100)}</small></span><button class="btn ghost sm" data-act="futClose" data-arg="${fid}">청산</button></div>`;
 }
 function futuresView() {
-  return `<div class="note">선물은 지수가 오를지(<b class="up">롱</b>) 내릴지(<b class="down">숏</b>)에 거는 계약입니다. 계약 금액의 ${FUT_MARGIN * 100}%만 증거금으로 맡기고, 달이 바뀔 때 증거금이 ${FUT_CUT * 100}% 아래로 떨어지면 강제 청산됩니다.</div>` + FUTURES.map(f => {
+  return `<div class="note">선물은 지수가 오를지(<b class="up">롱</b>) 내릴지(<b class="down">숏</b>)에 거는 계약입니다. 레버리지 ${FUT_LEVS.join('·')}배 가운데 고르면 계약 금액의 ${FUT_LEVS.map(l => Math.round(100 / l) + '%').join('·')}만 증거금으로 맡기고, 지수가 1% 움직일 때 증거금은 그 배수만큼 움직입니다. 달이 바뀔 때 증거금이 처음의 ${FUT_CUT * 100}% 아래로 떨어지면 강제 청산됩니다.</div>` + FUTURES.map(f => {
     if (!futOpen(f.id)) return `<div class="card"><h3>${f.name}</h3><div class="note">${icon('lock', 14)} ${f.open.replace('-', '년 ')}월 상장</div></div>`;
     const p = futPrice(f.id), key = 'idx:' + f.idx;
     const mis = []; for (let mi = Math.max(0, S.mi - 36); mi <= revealedTo(key); mi++) mis.push(mi);
@@ -404,7 +404,7 @@ function futuresView() {
       ${lineChart(mis.map(mi => macroAt(f.idx, mi)), { split: S.mi - mis[0], labels: yearLabels(mis), label: f.name })}
       ${revealBox(key, mi => macroAt(f.idx, mi), v => v.toFixed(2))}
       ${futPosStrip(f.id)}
-      <button class="btn dv-go" data-act="ordOpen" data-arg="fut:${f.id}">주문하기 <small class="num">1계약 ${fmtWon(futUnitCost(f.id))}</small></button></div>`;
+      <button class="btn dv-go" data-act="ordOpen" data-arg="fut:${f.id}">주문하기 <small>레버리지 ${FUT_LEVS.join('·')}배</small></button></div>`;
   }).join('');
 }
 function optionsView() {
@@ -441,7 +441,7 @@ function bondsView() {
 // 주식: 매수/매도 고르기 · 선물: 수량 고르고 롱/숏 · 옵션: 행사가·수량 고르고 콜/풋 · 채권: 금액 고르고 매수
 function ordEst() {
   const o = UI.order, q = UI.qty;
-  if (o.kind === 'fut') { const v = futPrice(o.id) * futMultKRW(o.id) * q; return `증거금 ${fmtWon(v * FUT_MARGIN)} · 수수료 ${fmtWon(v * FUT_FEE)}`; }
+  if (o.kind === 'fut') { const v = futPrice(o.id) * futMultKRW(o.id) * q; return `증거금 ${fmtWon(v / o.lev)} · 수수료 ${fmtWon(v * FUT_FEE)}`; }
   if (o.kind === 'opt') return `콜 ${fmtWon(optUnitCost('C', o.K) * q)} · 풋 ${fmtWon(optUnitCost('P', o.K) * q)}`;
   if (o.kind === 'bond') return `이자 달마다 약 ${fmtWon(UI.amt * bondYield(o.id) / 1200 * (1 - INTEREST_TAX))}`;
   return '';
@@ -467,11 +467,15 @@ function orderPopHTML() {
       <button class="btn ghost sm" data-act="ordDetail">차트·상세 보기 ${icon('next', 14)}</button>`;
   } else if (o.kind === 'fut') {
     const f = FUT[o.id], pos = S.fut[o.id];
+    o.lev = pos ? pos.lev : o.lev || UI.futLev;   // 포지션이 있으면 그 레버리지로만 더 건다
+    const lev = o.lev, unit = futUnitCost(o.id, lev);
     kind = '선물'; name = f.name;
     body = `<div class="ord-price"><b class="num">${futPrice(o.id).toFixed(2)}</b>${pctSpan(macroChange(f.idx))}<span class="sp"></span><span class="sub num">1포인트 = ${fmtWon(futMultKRW(o.id))}</span></div>
       ${futPosStrip(o.id)}
-      ${contractDock(futMax(o.id), [['1', 'buy', '롱 ▲', '오르면 이익', futUnitCost(o.id), pos && pos.dir < 0], ['-1', 'sell', '숏 ▼', '내리면 이익', futUnitCost(o.id), pos && pos.dir > 0]],
-        pos && pos.q >= POS_LIMIT.fut ? '포지션 한도(' + POS_LIMIT.fut + '계약)에 닿았습니다.' : '증거금이 부족합니다. (1계약 ' + fmtWon(futUnitCost(o.id)) + ')')}
+      <div class="dock-row"><span class="sub">레버리지</span><span class="sp"></span><div class="seg lev">${(pos && !FUT_LEVS.includes(pos.lev) ? [pos.lev] : FUT_LEVS).map(l => `<button class="${l === lev ? 'on' : ''}" data-act="ordLev" data-arg="${l}" ${pos && l !== lev ? 'disabled' : ''}>${l}배</button>`).join('')}</div></div>
+      <div class="lev-note sub">증거금 ${Math.round(100 / lev)}% · 지수 1% → 증거금 <b class="num">±${lev}%</b> · 지수가 약 <b class="num">${(100 * (1 - FUT_CUT) / lev).toFixed(0)}%</b> 반대로 가면 강제 청산${pos ? ' · 지금 포지션과 같은 배수로만 더 걸 수 있습니다' : ''}</div>
+      ${contractDock(futMax(o.id, lev), [['1', 'buy', '롱 ▲', '오르면 이익', unit, pos && pos.dir < 0], ['-1', 'sell', '숏 ▼', '내리면 이익', unit, pos && pos.dir > 0]],
+        pos && pos.q >= POS_LIMIT.fut ? '포지션 한도(' + POS_LIMIT.fut + '계약)에 닿았습니다.' : '증거금이 부족합니다. (1계약 ' + fmtWon(unit) + ')')}
       ${pos ? `<div class="sub">반대 방향은 지금 포지션을 청산한 뒤에 걸 수 있습니다.</div>` : ''}`;
   } else if (o.kind === 'opt') {
     const chain = optChain(), s = macro('ks200');
@@ -903,7 +907,7 @@ const ACT = {
   side(s) { UI.side = s; UI.qty = 0; render(); },
   pct(p) {
     const o = UI.order;
-    if (o && o.kind !== 'stock') { const max = o.kind === 'fut' ? futMax(o.id) : optMax(o.K); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(1, Math.floor(max * p))); return render(); }
+    if (o && o.kind !== 'stock') { const max = o.kind === 'fut' ? futMax(o.id, o.lev) : optMax(o.K); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(1, Math.floor(max * p))); return render(); }
     const id = o ? o.id : UI.sel, max = orderMax(id); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(qtyStep(id), roundQty(id, max * p))); render();
   },
   trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) { UI.qty = 0; UI.order = null; if (!r.v) toast(S.log[0].t); } sold(r); },
@@ -947,11 +951,12 @@ const ACT = {
   },
   ordClose() { UI.order = null; render(); },
   ordScrim(_, el, ev) { if (ev && ev.target === el) ACT.ordClose(); },
+  ordLev(l) { const o = UI.order; if (S.fut[o.id]) return; o.lev = UI.futLev = +l; UI.qty = Math.min(UI.qty, futMax(o.id, o.lev)); render(); },
   ordK(k) { UI.order.K = +k; UI.qty = Math.min(UI.qty, optMax(+k)); render(); },
   ordDetail() { const id = UI.order.id; UI.order = null; UI.sheet = 'stocks'; UI.sel = id; render(); },
   ordGo(a) {
     const o = UI.order; if (!o) return;
-    const r = o.kind === 'fut' ? openFut(o.id, +a, UI.qty) : o.kind === 'opt' ? buyOpt(a, o.K, UI.qty) : o.kind === 'bond' ? buyBond(o.id, UI.amt) : null;
+    const r = o.kind === 'fut' ? openFut(o.id, +a, UI.qty, o.lev) : o.kind === 'opt' ? buyOpt(a, o.K, UI.qty) : o.kind === 'bond' ? buyBond(o.id, UI.amt) : null;
     if (!r) return;
     if (r.ok) { UI.order = null; UI.qty = 0; toast(S.log[0].t); }
     sold(r);
@@ -993,6 +998,7 @@ const ACT = {
     const r = nextMonth();
     if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`;
       const os = takeOptSettle(); if (os) UI.pops.push(os);               // 옵션이 만기로 정산됐으면 결과 창
+      for (const v of takeFutCut()) UI.pops.push(v);                       // 선물 강제 청산
       const rep = !S.ended && periodDue(); if (rep) UI.pops.push(rep);   // 분기·해가 바뀌면 결산 창
       save(); }
     afterTurn();

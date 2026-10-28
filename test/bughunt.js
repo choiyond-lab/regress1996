@@ -527,7 +527,7 @@ expect(curYM() === '2011-05' && near(S.taxPaid - cu, (1e7 - US_GAIN_TAX.free) * 
 fresh(); at('2012-06'); S.cash = 1e8; buy('aapl', 10); at('2012-12'); sell('aapl', 10);
 expect(S.usGain[2012] != null, '27-14 해외 주식 차익 기록');
 fresh(); at('2009-06'); S.cash = 1e9; const cf = S.cash; openFut('kf', 1, 1);
-expect(near(cf - S.cash, S.fut.kf.margin + futPrice('kf') * futMultKRW('kf') * FUT_FEE, 1e-9), '27-15 선물 수수료');
+expect(near(cf - S.cash, S.fut.kf.margin + futPrice('kf') * futMultKRW('kf') * FUT_FEE, 1e-9) && near(S.fut.kf.margin, futPrice('kf') * futMultKRW('kf') / FUT_LEV, 1e-9), '27-15 선물 수수료 · 기본 레버리지 증거금');
 const fp = S.feePaid; buyOpt('C', optChain()[2].K, 1); expect(S.feePaid > fp, '27-16 옵션 수수료');
 UI.sheet = 'stocks'; UI.sel = 'ss'; h = draw('27 배당·비용 카드', () => {}); expect(/배당·비용/.test(h) && /매매 수수료/.test(h), '27-17 종목 화면에 배당·비용');
 UI.sheet = null; UI.sel = null; UI.tab = 'status'; h = draw('27 상태 누계', () => {}); expect(/받은 배당 누계/.test(h) && /낸 세금 누계/.test(h), '27-18 상태 탭 누계');
@@ -560,6 +560,37 @@ const swing = (id, a, b) => MARKET.s[id].c[miOf(b)] / MARKET.s[id].c[miOf(a)];
 expect(swing('gme', '2020-12', '2021-01') > 5, '29-7 게임스탑 2021년 1월 폭등 ×' + swing('gme', '2020-12', '2021-01').toFixed(1));
 expect(swing('shinpoong', '2020-01', '2020-09') > 10, '29-8 신풍제약 2020년 폭등 ×' + swing('shinpoong', '2020-01', '2020-09').toFixed(1));
 expect(swing('aig', '2007-12', '2009-03') < 0.1, '29-9 AIG 2008년 폭락');
+
+// ---------- 35. 선물 레버리지 2·5·10배 ----------
+fresh(); at('2008-08'); S.cash = 1e10; S.flags.account = true; UI.pops = []; UI.order = null;
+const n35 = futPrice('kf') * futMultKRW('kf');
+for (const l of [2, 5, 10]) { openFut('kf', 1, 1, l); expect(S.fut.kf && S.fut.kf.lev === l && near(S.fut.kf.margin, n35 / l, 1e-9), '35-1 ' + l + '배 증거금 = 계약 금액 ÷ ' + l); closeFut('kf'); }
+expect(!openFut('kf', 1, 1, 3).ok, '35-2 없는 레버리지 거절');
+openFut('kf', 1, 2, 10);
+expect(!openFut('kf', 1, 1, 2).ok && openFut('kf', 1, 1).ok && S.fut.kf.q === 3 && S.fut.kf.lev === 10, '35-3 포지션이 있으면 같은 배수로만 더 걸기');
+const cut35 = futCutPrice('kf');
+expect(cut35 < futPrice('kf') && near((futPrice('kf') - cut35) / futPrice('kf'), (1 - FUT_CUT) / 10, 0.05), '35-4 10배 롱 강제 청산 지수 ≈ 7% 아래');
+closeFut('kf');
+S.cash = n35 * 20; expect(futMax('kf', 10) > futMax('kf', 2) * 4 && futMax('kf', 10) < POS_LIMIT.fut, '35-5 레버리지가 높을수록 더 많이 건다'); S.cash = 1e10;
+// 주문창에서 레버리지 고르기
+UI.sheet = 'stocks'; UI.ftab = 'FUT';
+h = draw('35 레버리지 주문창', () => ACT.ordOpen('fut:kf'));
+expect(UI.order.lev === UI.futLev && /data-act="ordLev" data-arg="10"/.test(h) && /강제 청산/.test(h), '35-6 주문창에 레버리지 2·5·10배');
+ACT.ordLev('10'); onInput('qty', '3'); ACT.ordGo('1');
+expect(S.fut.kf && S.fut.kf.lev === 10 && S.fut.kf.q === 3 && UI.futLev === 10, '35-7 10배 롱 3계약 · 고른 배수 기억');
+h = draw('35 포지션 있으면 배수 잠금', () => ACT.ordOpen('fut:kf'));
+expect(UI.order.lev === 10 && /data-arg="2" disabled/.test(h) && /10배/.test(h), '35-8 포지션이 있으면 다른 배수 잠금');
+ACT.ordLev('2'); expect(UI.order.lev === 10, '35-9 잠긴 배수는 못 바꿈');
+ACT.ordClose();
+// 2008년 폭락: 10배 롱은 다음 달 바로 강제 청산되고 결과 창
+playStory(); RUN = null; S.sta = 0; UI.confirmNext = true;
+for (let k = 0; k < 3 && S.fut.kf; k++) { UI.confirmNext = true; playStory(); RUN = null; ACT.next(); if (S.fut.kf) UI.pops = []; }
+expect(!S.fut.kf && UI.pops.some(p => /강제 청산/.test(p.title)), '35-10 강제 청산 결과 창');
+UI.pops = []; UI.sheet = null; UI.ftab = 'KS';
+// 레버리지 전에 저장한 포지션
+S.fut.kf = { dir: 1, q: 1, entry: futPrice('kf'), margin: n35 * 0.15, mult: 500000 }; save(); load();
+expect(S.fut.kf.lev === FUT_OLD_LEV && openFut('kf', 1, 1).ok && S.fut.kf.q === 2, '35-11 옛 포지션은 6.7배로 불러와 그대로 더 걸기');
+closeFut('kf'); UI.pops = []; UI.futLev = FUT_LEV;
 
 // ---------- 34. 종목 줄 아래 버튼 · 옵션 만기 정산 창 ----------
 fresh(); at('2006-06'); S.cash = 5e9; S.flags.account = true; UI.pops = []; UI.order = null;
@@ -600,7 +631,7 @@ UI.ftab = 'FUT'; h = draw('33 선물 목록', () => {});
 expect(/data-arg="fut:kf"/.test(h) && !/class="qty"/.test(h), '33-7 선물 목록은 주문하기 버튼만');
 h = draw('33 선물 주문창', () => ACT.ordOpen('fut:kf'));
 expect(/롱 ▲/.test(h) && /숏 ▼/.test(h) && /data-act="ordGo" data-arg="1"/.test(h), '33-8 선물 주문창 롱·숏');
-ACT.pct(1); expect(UI.qty === futMax('kf') && UI.qty > 0, '33-9 최대 계약');
+ACT.pct(1); expect(UI.qty === futMax('kf', UI.order.lev) && UI.qty > 0, '33-9 최대 계약');
 onInput('qty', '2'); ACT.ordGo('1');
 expect(S.fut.kf && S.fut.kf.dir === 1 && S.fut.kf.q === 2 && !UI.order, '33-10 롱 2계약');
 h = draw('33 선물 포지션', () => ACT.ordOpen('fut:kf'));

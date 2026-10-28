@@ -1,5 +1,5 @@
 // ===== 게임 데이터 상수 — 밸런스를 조정할 곳 =====
-const VERSION = 'v0.9.1';
+const VERSION = 'v0.9.2';
 const SAVE_KEY = 'regress1996-save';
 const PORTRAIT_DIR = 'assets/portrait/';
 
@@ -276,8 +276,10 @@ const FUTURES = [
   { id: 'kf', name: '코스피200 선물', idx: 'ks200', cur: 'KRW', mult: ym => ym < '2017-03' ? 500000 : 250000, open: '1996-05' },
   { id: 'nqf', name: '나스닥100 선물', idx: 'ndx', cur: 'USD', mult: () => 20, open: '1999-06' },
 ];
-const FUT_MARGIN = 0.15;        // 증거금률
-const FUT_CUT = 0.3;            // 증거금이 이 비율 아래로 떨어지면 강제 청산
+const FUT_LEVS = [2, 5, 10];   // 고를 수 있는 레버리지. 증거금 = 계약 금액 ÷ 레버리지 (50%·20%·10%)
+const FUT_LEV = 5;             // 처음 골라 둔 레버리지
+const FUT_OLD_LEV = 6.7;       // 레버리지 도입 전(증거금 15%)에 잡은 포지션
+const FUT_CUT = 0.3;            // 증거금이 처음의 이 비율 아래로 떨어지면 강제 청산 (레버리지 L배면 지수가 약 70/L% 반대로 갈 때)
 const OPT_MULT = 250000;        // 코스피200 옵션 1포인트 = 25만원
 const OPT_STRIKES = [-0.1, -0.05, 0, 0.05, 0.1];
 const POS_LIMIT = { fut: 500, opt: 2000 };

@@ -14,6 +14,7 @@ function load() {
     if (!d || d.v !== 2 || typeof d.mi !== 'number') return false;   // 주 단위였던 v1 저장은 버린다
     const base = newGame({ name: d.name, seed: 1 });   // 새 항목이 생겨도 기본값을 채운다
     S = Object.assign(base, d);
+    for (const p of Object.values(S.fut)) if (!p.lev) p.lev = FUT_OLD_LEV;   // 레버리지 전 포지션은 증거금 15% (6.7배)
     for (const r of Object.values(S.re)) {   // 부동산 관리 전 저장: 원래처럼 모두 월세로 둔다
       if (!r.mode) r.mode = 'wolse';
       if (r.dep == null) r.dep = 0;

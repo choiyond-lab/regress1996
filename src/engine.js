@@ -214,20 +214,23 @@ function futMultKRW(fid, pos) {
   return m * (f.cur === 'USD' ? fxNow() : 1);
 }
 function futOpen(fid) { return curYM() >= FUT[fid].open && tabOpen('FUT'); }
-function openFut(fid, dir, q) {
+function openFut(fid, dir, q, lev) {
   if (!S.flags.account) return fail('아직 증권 계좌가 없습니다.');
   if (!futOpen(fid)) return fail('아직 상장되지 않았습니다.');
   q = Math.floor(q); if (!(q > 0)) return fail('수량을 확인하세요.');
   const pos = S.fut[fid];
+  lev = lev || (pos ? pos.lev : FUT_LEV);
   if (pos && pos.dir !== dir) return fail('반대 포지션은 먼저 청산하세요.');
+  if (pos && pos.lev !== lev) return fail(`지금 포지션(${pos.lev}배)과 같은 레버리지로만 더 걸 수 있습니다.`);
+  if (!pos && !FUT_LEVS.includes(lev)) return fail('레버리지를 확인하세요.');
   if ((pos ? pos.q : 0) + q > POS_LIMIT.fut) return fail('포지션 한도는 ' + POS_LIMIT.fut + '계약입니다.');
   const p = futPrice(fid), mult = FUT[fid].mult(curYM());
-  const margin = p * futMultKRW(fid) * q * FUT_MARGIN, fee = p * futMultKRW(fid) * q * FUT_FEE;
+  const margin = p * futMultKRW(fid) * q / lev, fee = p * futMultKRW(fid) * q * FUT_FEE;
   if (margin + fee > S.cash) return fail('증거금이 부족합니다. (필요 ' + fmtWon(margin + fee) + ')');
   S.cash -= margin + fee; S.feePaid += fee; S.realized -= fee;
   if (pos) { pos.entry = (pos.entry * pos.q + p * q) / (pos.q + q); pos.q += q; pos.margin += margin; }
-  else S.fut[fid] = { dir, q, entry: p, margin, mult };
-  log(`${FUT[fid].name} ${dir > 0 ? '매수' : '매도'} ${q}계약 · 증거금 ${fmtWon(margin)}`, 'blue');
+  else S.fut[fid] = { dir, q, entry: p, margin, mult, lev };
+  log(`${FUT[fid].name} ${dir > 0 ? '롱' : '숏'} ${lev}배 ${q}계약 · 증거금 ${fmtWon(margin)}`, 'blue');
   return ok();
 }
 function futPL(fid) { const pos = S.fut[fid]; return pos ? pos.dir * (futPrice(fid) - pos.entry) * futMultKRW(fid, pos) * pos.q : 0; }
@@ -237,16 +240,22 @@ function closeFut(fid, forced) {
   S.cash += pos.margin + pl - fee; S.realized += pl - fee; S.feePaid += fee;
   delete S.fut[fid];
   log(`${FUT[fid].name} ${forced ? '강제 청산' : '청산'} · 손익 ${fmtSigned(pl)}`, pl >= 0 ? 'good' : 'bad');
-  return ok({ kind: 'sold', title: '청산 체결', name: FUT[fid].name, what: `${pos.dir > 0 ? '매수' : '매도'} ${pos.q}계약 · ${futPrice(fid).toFixed(2)}`, pl: pl - fee, cost: pos.margin,
+  return ok({ kind: 'sold', title: forced ? '증거금 부족 · 강제 청산' : '청산 체결', name: FUT[fid].name, what: `${pos.dir > 0 ? '롱' : '숏'} ${pos.lev}배 ${pos.q}계약 · ${pos.entry.toFixed(2)} → ${futPrice(fid).toFixed(2)}`, pl: pl - fee, cost: pos.margin,
     rows: [['맡긴 증거금', pos.margin], ['가격 손익', pl], ['수수료', -fee], ['받은 돈', pos.margin + pl - fee, 1]] });
 }
 // 주문창용: 선물 한 계약에 드는 돈(증거금 + 수수료)과 걸 수 있는 최대 계약 수
-const futUnitCost = fid => futPrice(fid) * futMultKRW(fid) * (FUT_MARGIN + FUT_FEE);
-function futMax(fid) { const pos = S.fut[fid]; return Math.max(0, Math.min(POS_LIMIT.fut - (pos ? pos.q : 0), Math.floor(S.cash / futUnitCost(fid)))); }
+const futUnitCost = (fid, lev) => futPrice(fid) * futMultKRW(fid) * (1 / (lev || FUT_LEV) + FUT_FEE);
+function futMax(fid, lev) { const pos = S.fut[fid]; return Math.max(0, Math.min(POS_LIMIT.fut - (pos ? pos.q : 0), Math.floor(S.cash / futUnitCost(fid, lev)))); }
+// 강제 청산이 되는 지수 (진입가에서 증거금의 (1 - FUT_CUT) 만큼 잃는 곳)
+function futCutPrice(fid) { const pos = S.fut[fid]; return pos ? pos.entry - pos.dir * pos.margin * (1 - FUT_CUT) / (futMultKRW(fid, pos) * pos.q) : null; }
 function checkMargin() {
   for (const fid of Object.keys(S.fut)) {
     const pos = S.fut[fid];
-    if (pos.margin + futPL(fid) < pos.margin * FUT_CUT) { closeFut(fid, true); toast(FUT[fid].name + ' 증거금 부족으로 강제 청산되었습니다.'); }
+    if (pos.margin + futPL(fid) < pos.margin * FUT_CUT) {
+      const r = closeFut(fid, true);
+      (S.futCut || (S.futCut = [])).push(r.v);   // 「다음 달」을 누른 뒤 결과 창으로 보여 준다
+      toast(FUT[fid].name + ' 증거금 부족으로 강제 청산되었습니다.');
+    }
   }
 }
 
@@ -319,6 +328,8 @@ function settleOptions() {
   });
   S.optSettle = done.length ? { s, mi: last ? S.mi : S.mi + 1, done } : null;
 }
+// 강제 청산 결과 창들 (한 번 보여 주고 지운다)
+function takeFutCut() { const a = S.futCut || []; S.futCut = []; return a; }
 // 만기 정산 결과 창: 「다음 달」을 눌렀을 때 한 번 보여 주고 지운다
 function takeOptSettle() {
   const x = S.optSettle; S.optSettle = null;
