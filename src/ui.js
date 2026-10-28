@@ -289,8 +289,8 @@ function tickerList(tab) {
   const inTab = t => tab === 'ETF' || tab === 'US' || tab === 'COIN' ? t.tab === tab : (Array.isArray(t.tab) ? tkTab(t.id) === tab : t.tab === tab);
   const now = sortTickers(TICKERS.filter(t => inTab(t) && listed(t.id)), UI.sort);
   const later = TICKERS.filter(t => !listed(t.id) && MARKET.s[t.id] && MARKET.s[t.id].c.slice(S.mi).some(v => v != null) && (tab === 'ETF' || tab === 'US' || tab === 'COIN' ? t.tab === tab : byDate(t.tab, ymOf(MARKET.s[t.id].c.findIndex(v => v != null))) === tab));
-  const row = (t, i) => { const id = t.id, h = S.hold[id], cap = UI.sort === 'cap' ? mcap(id) : 0, ret = h && h.cost ? (holdValue(id) / h.cost - 1) * 100 : null;
-    return `<div class="li tk"><button class="tk-main" data-act="sel" data-arg="${id}"><div class="nm">${UI.sort !== 'base' ? `<span class="rank num">${i + 1}</span>` : ''}<em>${tkName(id)}</em>${ret != null ? `<span class="badge ${ret >= 0 ? 'upb' : 'downb'} num">보유 ${fmtPct(ret)}</span>` : ''}${hintFor(id) ? `<span class="badge ${hintFor(id).up ? 'upb' : 'downb'}">💭 ${hintFor(id).up ? '폭등' : '폭락'}</span>` : ''}${S.reveal[id] >= S.mi ? '<span class="badge gem">기억</span>' : ''}</div>
+  const row = t => { const id = t.id, h = S.hold[id], cap = UI.sort === 'cap' ? mcap(id) : 0, ret = h && h.cost ? (holdValue(id) / h.cost - 1) * 100 : null;
+    return `<div class="li tk rows"><button class="tk-main" data-act="sel" data-arg="${id}"><div class="nm"><em>${tkName(id)}</em>${ret != null ? `<span class="badge ${ret >= 0 ? 'upb' : 'downb'} num">보유 ${fmtPct(ret)}</span>` : ''}${hintFor(id) ? `<span class="badge ${hintFor(id).up ? 'upb' : 'downb'}">💭 ${hintFor(id).up ? '폭등' : '폭락'}</span>` : ''}${S.reveal[id] >= S.mi ? '<span class="badge gem">기억</span>' : ''}</div>
       <div class="pr num">${fmtPrice(id, price(id))}</div><div class="ds">${cap ? '시총 ' + fmtWon(cap) + ' · ' : ''}${t.desc}</div><div class="ch num">${pctSpan(changePct(id))}</div></button>
       <div class="tk-btns"><button class="mini buy" data-act="ordOpen" data-arg="stock:${id}:buy">매수</button><button class="mini sell" data-act="ordOpen" data-arg="stock:${id}:sell" ${h ? '' : 'disabled'}>매도</button></div></div>`; };
   const sortSeg = `<div class="seg wide sort">${SORTS.map(([k, l]) => `<button class="${UI.sort === k ? 'on' : ''}" data-act="sort" data-arg="${k}">${l}</button>`).join('')}</div>`;
@@ -991,8 +991,10 @@ const ACT = {
     if (canAct && !UI.confirmNext) { UI.confirmNext = true; toast(`체력이 ${Math.round(S.sta)} 남았습니다. 한 번 더 누르면 다음 달로 넘어갑니다.`); return render(); }
     UI.confirmNext = false;
     const r = nextMonth();
-    if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`; save();
-      const rep = !S.ended && periodDue(); if (rep) UI.pops.push(rep); }   // 분기·해가 바뀌면 결산 창
+    if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`;
+      const os = takeOptSettle(); if (os) UI.pops.push(os);               // 옵션이 만기로 정산됐으면 결과 창
+      const rep = !S.ended && periodDue(); if (rep) UI.pops.push(rep);   // 분기·해가 바뀌면 결산 창
+      save(); }
     afterTurn();
   },
   storyTap(_, el, ev) {

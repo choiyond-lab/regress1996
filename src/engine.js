@@ -308,14 +308,24 @@ function sellOpt(i) {
 }
 // 월말 정산 때 부른다. 다음 달 종가로 만기 정산한다 (마지막 달이면 이번 달 종가)
 function settleOptions() {
-  const last = S.mi >= LAST_MI, s = macroAt('ks200', last ? S.mi : S.mi + 1);
+  const last = S.mi >= LAST_MI, s = macroAt('ks200', last ? S.mi : S.mi + 1), done = [];
   S.opt = S.opt.filter(o => {
     if (!last && o.exp > S.mi + 1) return true;
     const pay = Math.max(0, o.type === 'C' ? s - o.K : o.K - s) * OPT_MULT * o.q;
     S.cash += pay; S.realized += pay - o.cost;
+    done.push({ type: o.type, K: o.K, q: o.q, cost: o.cost, pay });
     log(`옵션 만기 · ${o.type === 'C' ? '콜' : '풋'} ${o.K} → ${pay > 0 ? fmtWon(pay) + ' 지급' : '소멸'} (손익 ${fmtSigned(pay - o.cost)})`, pay > o.cost ? 'good' : 'bad');
     return false;
   });
+  S.optSettle = done.length ? { s, mi: last ? S.mi : S.mi + 1, done } : null;
+}
+// 만기 정산 결과 창: 「다음 달」을 눌렀을 때 한 번 보여 주고 지운다
+function takeOptSettle() {
+  const x = S.optSettle; S.optSettle = null;
+  if (!x) return null;
+  const pay = x.done.reduce((a, o) => a + o.pay, 0), cost = x.done.reduce((a, o) => a + o.cost, 0);
+  return { kind: 'sold', title: '옵션 만기 정산', name: `코스피200 옵션 ${x.done.length}건`, what: `${fmtYM(x.mi)} 말 코스피200 ${x.s.toFixed(2)}`, pl: pay - cost, cost,
+    rows: [...x.done.map(o => [`${o.type === 'C' ? '콜' : '풋'} ${o.K.toFixed(1)} · ${o.q}계약${o.pay > 0 ? '' : ' (소멸)'}`, o.pay]), ['받은 돈', pay, 1], ['산 금액', cost]] };
 }
 
 // ---- 채권 ----

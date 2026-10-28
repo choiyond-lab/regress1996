@@ -544,7 +544,7 @@ at('2015-06'); expect(sortTickers(TICKERS.filter(t => listed(t.id) && t.tab === 
 at('2013-11'); const btc28 = mcap('btc') / fxNow(); expect(btc28 > 5e9 && btc28 < 3e10, '28-6 2013년 11월 비트코인 시총 약 130억 달러 (' + (btc28 / 1e9).toFixed(1) + 'B)');
 at('2010-06'); expect(mcap('ss') > 7e13 && mcap('ss') < 2e14, '28-7 2010년 삼성전자 시총 근사 (실제 약 110조, 이후 소각분만큼 작게 나옴: ' + fmtWon(mcap('ss')) + ')');
 UI.sheet = 'stocks'; UI.ftab = 'KS'; UI.sel = null; UI.sort = 'cap'; h = draw('28 시총 정렬 목록', () => {});
-expect(/data-act="sort"/.test(h) && /시총 /.test(h) && /class="rank/.test(h), '28-8 정렬 버튼 · 시총 · 순위');
+expect(/data-act="sort"/.test(h) && /시총 /.test(h) && !/class="rank/.test(h), '28-8 정렬 버튼 · 시총 · 순위 번호 없음');
 UI.sort = 'base'; UI.sheet = null;
 
 // ---------- 29. 부촌 매물 · 두 열 카드 · 폭등·폭락 종목 ----------
@@ -560,6 +560,23 @@ const swing = (id, a, b) => MARKET.s[id].c[miOf(b)] / MARKET.s[id].c[miOf(a)];
 expect(swing('gme', '2020-12', '2021-01') > 5, '29-7 게임스탑 2021년 1월 폭등 ×' + swing('gme', '2020-12', '2021-01').toFixed(1));
 expect(swing('shinpoong', '2020-01', '2020-09') > 10, '29-8 신풍제약 2020년 폭등 ×' + swing('shinpoong', '2020-01', '2020-09').toFixed(1));
 expect(swing('aig', '2007-12', '2009-03') < 0.1, '29-9 AIG 2008년 폭락');
+
+// ---------- 34. 종목 줄 아래 버튼 · 옵션 만기 정산 창 ----------
+fresh(); at('2006-06'); S.cash = 5e9; S.flags.account = true; UI.pops = []; UI.order = null;
+UI.sheet = 'stocks'; UI.ftab = 'KS'; UI.sel = null; UI.sort = 'up';
+h = draw('34 종목 줄', () => {});
+expect(/class="li tk rows"/.test(h) && !/class="rank/.test(h), '34-1 버튼이 줄 아래 · 정렬해도 순위 번호 없음');
+UI.sheet = null; UI.sort = 'base';
+const K34 = optChain()[2].K;
+buyOpt('C', K34, 2); buyOpt('P', optChain()[0].K, 1);
+playStory(); RUN = null; S.sta = 0; UI.confirmNext = true;
+h = draw('34 옵션 만기', () => ACT.next());
+const p34 = UI.pops.find(p => p.title === '옵션 만기 정산');
+expect(!S.opt.length && p34 && p34.rows.length === 4 && /코스피200 옵션 2건/.test(p34.name), '34-2 만기 정산 결과 창');
+expect(Math.abs(p34.pl - (p34.rows[2][1] - p34.rows[3][1])) < 1 && /옵션 만기 정산/.test(h), '34-3 손익 = 받은 돈 - 산 금액');
+UI.pops = []; playStory(); RUN = null; UI.confirmNext = true; ACT.next();
+expect(!UI.pops.some(p => p.title === '옵션 만기 정산') && S.optSettle == null, '34-4 옵션이 없으면 정산 창 없음');
+UI.pops = [];
 
 // ---------- 33. 가운데 주문창: 주식 리스트 · 선물 롱/숏 · 옵션 콜/풋 · 채권 ----------
 fresh(); at('2006-06'); S.cash = 5e9; S.flags.account = true; UI.pops = []; UI.order = null;
