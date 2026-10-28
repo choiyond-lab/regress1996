@@ -240,6 +240,9 @@ function closeFut(fid, forced) {
   return ok({ kind: 'sold', title: '청산 체결', name: FUT[fid].name, what: `${pos.dir > 0 ? '매수' : '매도'} ${pos.q}계약 · ${futPrice(fid).toFixed(2)}`, pl: pl - fee, cost: pos.margin,
     rows: [['맡긴 증거금', pos.margin], ['가격 손익', pl], ['수수료', -fee], ['받은 돈', pos.margin + pl - fee, 1]] });
 }
+// 주문창용: 선물 한 계약에 드는 돈(증거금 + 수수료)과 걸 수 있는 최대 계약 수
+const futUnitCost = fid => futPrice(fid) * futMultKRW(fid) * (FUT_MARGIN + FUT_FEE);
+function futMax(fid) { const pos = S.fut[fid]; return Math.max(0, Math.min(POS_LIMIT.fut - (pos ? pos.q : 0), Math.floor(S.cash / futUnitCost(fid)))); }
 function checkMargin() {
   for (const fid of Object.keys(S.fut)) {
     const pos = S.fut[fid];
@@ -286,6 +289,13 @@ function buyOpt(type, K, q) {
   log(`코스피200 ${type === 'C' ? '콜' : '풋'} ${K} ${q}계약 매수 · ${fmtWon(cost)}`, 'blue');
   return ok();
 }
+// 주문창용: 옵션 한 계약 값(수수료 포함)과 이번 달 더 살 수 있는 계약 수 (콜·풋 가운데 싼 쪽 기준)
+const optUnitCost = (type, K) => optPremium(type, K) * OPT_MULT * (1 + OPT_FEE);
+function optMax(K) {
+  const held = S.opt.filter(o => o.mi === S.mi).reduce((s, o) => s + o.q, 0);
+  const c = Math.max(1, Math.min(optUnitCost('C', K), optUnitCost('P', K)));
+  return Math.max(0, Math.min(POS_LIMIT.opt - held, Math.floor(S.cash / c)));
+}
 // 옵션은 산 달에만 들고 있으므로 남은 기간은 늘 한 달이다
 function optValue(o) { return optPremium(o.type, o.K) * OPT_MULT * o.q; }
 function sellOpt(i) {
@@ -326,6 +336,7 @@ function buyBond(bid, amtKRW) {
   log(`${b.name} ${fmtWon(amtKRW)} 매수 · 연 ${bondYield(bid).toFixed(2)}%`, 'blue');
   return ok();
 }
+const bondCost = pos => pos.face * (BOND[pos.b].cur === 'USD' ? MARKET.m.fx[pos.mi0] : 1);   // 산 금액 (원)
 function bondValue(pos) {
   const b = BOND[pos.b];
   const rem = Math.max(0, (pos.mat - S.mi) / 12), d = Math.min(b.dur, rem * 0.95);
@@ -334,7 +345,7 @@ function bondValue(pos) {
 }
 function sellBond(u) {
   const i = S.bonds.findIndex(x => x.u === u); if (i < 0) return fail('채권이 없습니다.');
-  const pos = S.bonds[i], v = bondValue(pos) * 0.998, cost = pos.face * (BOND[pos.b].cur === 'USD' ? MARKET.m.fx[pos.mi0] : 1);
+  const pos = S.bonds[i], v = bondValue(pos) * 0.998, cost = bondCost(pos);
   S.cash += v; S.realized += v - cost; S.bonds.splice(i, 1);
   log(`${BOND[pos.b].name} 매도 · ${fmtWon(v)}`, v >= cost ? 'good' : 'bad');
   return ok({ kind: 'sold', title: '매도 체결', name: BOND[pos.b].name, what: '만기 전 매도', pl: v - cost, cost, rows: [['받은 돈', v, 1], ['산 금액', cost]] });
@@ -720,7 +731,7 @@ function unrealized() {
   for (const id of Object.keys(S.hold)) s += holdValue(id) - S.hold[id].cost;
   for (const fid of Object.keys(S.fut)) s += futPL(fid);
   for (const o of S.opt) s += optValue(o) - o.cost;
-  for (const pos of S.bonds) s += bondValue(pos) - pos.face * (BOND[pos.b].cur === 'USD' ? MARKET.m.fx[pos.mi0] : 1);
+  for (const pos of S.bonds) s += bondValue(pos) - bondCost(pos);
   for (const id of Object.keys(S.re)) s += estatePrice(id) * S.re[id].q - S.re[id].cost;
   for (const id of Object.keys(S.lux)) s += luxValue(id) * S.lux[id] - S.luxCost[id];
   return s;

@@ -1,5 +1,5 @@
 // ===== 게임 데이터 상수 — 밸런스를 조정할 곳 =====
-const VERSION = 'v0.8.0';
+const VERSION = 'v0.9.0';
 const SAVE_KEY = 'regress1996-save';
 const PORTRAIT_DIR = 'assets/portrait/';
 

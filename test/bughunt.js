@@ -561,6 +561,62 @@ expect(swing('gme', '2020-12', '2021-01') > 5, '29-7 게임스탑 2021년 1월 �
 expect(swing('shinpoong', '2020-01', '2020-09') > 10, '29-8 신풍제약 2020년 폭등 ×' + swing('shinpoong', '2020-01', '2020-09').toFixed(1));
 expect(swing('aig', '2007-12', '2009-03') < 0.1, '29-9 AIG 2008년 폭락');
 
+// ---------- 33. 가운데 주문창: 주식 리스트 · 선물 롱/숏 · 옵션 콜/풋 · 채권 ----------
+fresh(); at('2006-06'); S.cash = 5e9; S.flags.account = true; UI.pops = []; UI.order = null;
+buy('ss', 10);
+UI.sheet = 'stocks'; UI.ftab = 'KS'; UI.sel = null; UI.sort = 'base';
+h = draw('33 주식 리스트', () => {});
+expect(/data-act="ordOpen" data-arg="stock:ss:buy"/.test(h) && /data-arg="stock:ss:sell"(?! disabled)/.test(h) && /보유 [+-]?\d/.test(h), '33-1 리스트에 매수·매도 버튼과 보유 수익률');
+expect(/data-arg="stock:hmc:sell" disabled/.test(h), '33-2 없는 종목은 매도 버튼 꺼짐');
+h = draw('33 주식 주문창', () => ACT.ordOpen('stock:ss:sell'));
+expect(UI.order && UI.side === 'sell' && /pop-card order/.test(h) && /매도하기/.test(h) && /data-act="ordClose"/.test(h), '33-3 매도 버튼 → 가운데 주문창');
+onInput('qty', '4'); ACT.trade('ss');
+expect(!UI.order && S.hold.ss.q === 6 && UI.pops.length === 1 && UI.pops[0].kind === 'sold', '33-4 주문창에서 매도 → 결과 창');
+UI.pops = [];
+ACT.ordOpen('stock:hmc:buy'); onInput('qty', '3'); ACT.trade('hmc');
+expect(!UI.order && S.hold.hmc && S.hold.hmc.q === 3 && !UI.pops.length, '33-5 주문창에서 매수');
+ACT.ordOpen('stock:ss:buy'); ACT.ordDetail();
+expect(!UI.order && UI.sel === 'ss', '33-6 차트·상세 보기');
+UI.sel = null;
+// 선물: 수량 고르고 롱/숏
+UI.ftab = 'FUT'; h = draw('33 선물 목록', () => {});
+expect(/data-arg="fut:kf"/.test(h) && !/class="qty"/.test(h), '33-7 선물 목록은 주문하기 버튼만');
+h = draw('33 선물 주문창', () => ACT.ordOpen('fut:kf'));
+expect(/롱 ▲/.test(h) && /숏 ▼/.test(h) && /data-act="ordGo" data-arg="1"/.test(h), '33-8 선물 주문창 롱·숏');
+ACT.pct(1); expect(UI.qty === futMax('kf') && UI.qty > 0, '33-9 최대 계약');
+onInput('qty', '2'); ACT.ordGo('1');
+expect(S.fut.kf && S.fut.kf.dir === 1 && S.fut.kf.q === 2 && !UI.order, '33-10 롱 2계약');
+h = draw('33 선물 포지션', () => ACT.ordOpen('fut:kf'));
+expect(/data-arg="-1" data-unit="[\d.e+]+" data-lock="1" disabled/.test(h) && /청산/.test(h), '33-11 롱이 있으면 숏은 잠김 · 청산 버튼');
+onInput('qty', '1'); ACT.ordGo('-1');
+expect(S.fut.kf.q === 2, '33-12 반대 방향 주문 거절');
+ACT.futClose('kf');
+expect(!S.fut.kf && !UI.order && UI.pops.length === 1 && UI.pops[0].title === '청산 체결', '33-13 청산 → 결과 창');
+UI.pops = [];
+// 옵션: 행사가·수량 고르고 콜/풋
+UI.ftab = 'OPT'; h = draw('33 옵션 목록', () => {});
+expect(/data-arg="opt:\d/.test(h) && /콜 1계약/.test(h), '33-14 옵션 목록');
+h = draw('33 옵션 주문창', () => ACT.ordOpen('opt:'));
+const K33 = UI.order.K;
+expect(K33 > 0 && /콜 ▲/.test(h) && /풋 ▼/.test(h) && /data-act="ordK"/.test(h), '33-15 옵션 주문창 콜·풋 · 처음엔 지금 지수 근처 행사가');
+const K33b = optChain()[0].K; ACT.ordK(K33b);
+expect(UI.order.K === K33b, '33-16 행사가 바꾸기');
+onInput('qty', '3'); ACT.ordGo('P');
+expect(S.opt.length === 1 && S.opt[0].type === 'P' && S.opt[0].K === K33b && S.opt[0].q === 3 && !UI.order, '33-17 풋 3계약');
+h = draw('33 보유 옵션', () => {});
+expect(/data-act="optSell"/.test(h), '33-18 보유 옵션 매도 버튼');
+ACT.optSell('0'); expect(!S.opt.length && UI.pops.length === 1, '33-19 옵션 매도 → 결과 창');
+UI.pops = [];
+// 채권: 금액 고르고 매수
+UI.ftab = 'BOND'; h = draw('33 채권 목록', () => {});
+expect(/data-arg="bond:ktb3"/.test(h) && !/data-input="amt"/.test(h), '33-20 채권 목록');
+h = draw('33 채권 주문창', () => ACT.ordOpen('bond:ktb3'));
+expect(/data-input="amt"/.test(h) && /매수하기/.test(h), '33-21 채권 주문창');
+ACT.apct(0.1); const amt33 = UI.amt; ACT.ordGo('buy');
+expect(S.bonds.length === 1 && Math.abs(bondCost(S.bonds[0]) - amt33) < 1 && !UI.order, '33-22 채권 매수');
+ACT.bondSell(String(S.bonds[0].u)); expect(!S.bonds.length && UI.pops.length === 1, '33-23 채권 매도 → 결과 창');
+UI.pops = []; UI.sheet = null; UI.ftab = 'KS';
+
 // ---------- 32. 매도 결과 창 · 결산 · 고정 주문창 · 상세 재무 ----------
 fresh(); at('2005-06'); S.cash = 1e10; S.flags.account = true;
 buy('ss', 10);

@@ -1,7 +1,7 @@
 // ===== 화면 =====
 // 화면 상태는 저장하지 않는다. 게임 상태는 S, 이야기 진행은 RUN 에 있다
 const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, confirmNext: false, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
-  typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q' };
+  typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q', order: null };
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
 const pad2 = n => String(n).padStart(2, '0');
@@ -33,7 +33,7 @@ function render() {
   const vEl = ph.querySelector && ph.querySelector('.view'), sEl = ph.querySelector && ph.querySelector('.sheet-body');
   const vTop = vEl ? vEl.scrollTop : 0, sTop = sEl ? sEl.scrollTop : 0;
   ph.innerHTML = topbarHTML() + `<main class="view">${viewHTML()}</main>` + tabbarHTML()
-    + (UI.sheet ? sheetHTML() : '') + (RUN && RUN.cur ? storyHTML() : UI.pops.length ? popHTML(UI.pops[0]) : '')
+    + (UI.sheet ? sheetHTML() : '') + (UI.order ? orderPopHTML() : '') + (RUN && RUN.cur ? storyHTML() : UI.pops.length ? popHTML(UI.pops[0]) : '')
     + `<div class="toast" id="toast"${UI.toastMsg ? '' : ' hidden'}>${esc(UI.toastMsg)}</div>`;
   if (key === UI.scrollKey) {
     const v = ph.querySelector && ph.querySelector('.view'), s = ph.querySelector && ph.querySelector('.sheet-body');
@@ -267,9 +267,6 @@ function sheetHTML() {
       <button class="icon-btn" data-act="close" aria-label="닫기">${icon('close', 18)}</button></div>
     <div class="sheet-body">${r.body}</div>${r.foot ? `<div class="sheet-foot">${r.foot}</div>` : ''}</div></div>`;
 }
-const qtyBox = (quick) => `<div class="qty"><button data-act="qty" data-arg="-1" aria-label="줄이기">${icon('minus', 16)}</button>
-  <input type="number" inputmode="decimal" min="0" data-input="qty" value="${UI.qty}" aria-label="수량"><button data-act="qty" data-arg="1" aria-label="늘리기">${icon('plus', 16)}</button></div>
-  <div class="quick">${quick.map(([l, v]) => `<button data-act="qtySet" data-arg="${v}">${l}</button>`).join('')}</div>`;
 const amtBox = (quick) => `<div class="qty" style="grid-template-columns:1fr"><input type="number" inputmode="numeric" min="0" data-input="amt" value="${Math.floor(UI.amt)}" aria-label="금액"></div>
   <div class="sub num" id="amtLabel" style="text-align:right">${fmtWon(UI.amt)}</div>
   <div class="quick">${quick.map(([l, v]) => `<button data-act="amtSet" data-arg="${v}">${l}</button>`).join('')}</div>`;
@@ -292,9 +289,10 @@ function tickerList(tab) {
   const inTab = t => tab === 'ETF' || tab === 'US' || tab === 'COIN' ? t.tab === tab : (Array.isArray(t.tab) ? tkTab(t.id) === tab : t.tab === tab);
   const now = sortTickers(TICKERS.filter(t => inTab(t) && listed(t.id)), UI.sort);
   const later = TICKERS.filter(t => !listed(t.id) && MARKET.s[t.id] && MARKET.s[t.id].c.slice(S.mi).some(v => v != null) && (tab === 'ETF' || tab === 'US' || tab === 'COIN' ? t.tab === tab : byDate(t.tab, ymOf(MARKET.s[t.id].c.findIndex(v => v != null))) === tab));
-  const row = (t, i) => { const id = t.id, h = S.hold[id], cap = UI.sort === 'cap' ? mcap(id) : 0;
-    return `<button class="li" data-act="sel" data-arg="${id}"><div class="nm">${UI.sort !== 'base' ? `<span class="rank num">${i + 1}</span>` : ''}<em>${tkName(id)}</em>${h ? '<span class="badge">보유</span>' : ''}${hintFor(id) ? `<span class="badge ${hintFor(id).up ? 'upb' : 'downb'}">💭 ${hintFor(id).up ? '폭등' : '폭락'}</span>` : ''}${S.reveal[id] >= S.mi ? '<span class="badge gem">기억</span>' : ''}</div>
-      <div class="pr num">${fmtPrice(id, price(id))}</div><div class="ds">${cap ? '시총 ' + fmtWon(cap) + ' · ' : ''}${t.desc}</div><div class="ch num">${pctSpan(changePct(id))}</div></button>`; };
+  const row = (t, i) => { const id = t.id, h = S.hold[id], cap = UI.sort === 'cap' ? mcap(id) : 0, ret = h && h.cost ? (holdValue(id) / h.cost - 1) * 100 : null;
+    return `<div class="li tk"><button class="tk-main" data-act="sel" data-arg="${id}"><div class="nm">${UI.sort !== 'base' ? `<span class="rank num">${i + 1}</span>` : ''}<em>${tkName(id)}</em>${ret != null ? `<span class="badge ${ret >= 0 ? 'upb' : 'downb'} num">보유 ${fmtPct(ret)}</span>` : ''}${hintFor(id) ? `<span class="badge ${hintFor(id).up ? 'upb' : 'downb'}">💭 ${hintFor(id).up ? '폭등' : '폭락'}</span>` : ''}${S.reveal[id] >= S.mi ? '<span class="badge gem">기억</span>' : ''}</div>
+      <div class="pr num">${fmtPrice(id, price(id))}</div><div class="ds">${cap ? '시총 ' + fmtWon(cap) + ' · ' : ''}${t.desc}</div><div class="ch num">${pctSpan(changePct(id))}</div></button>
+      <div class="tk-btns"><button class="mini buy" data-act="ordOpen" data-arg="stock:${id}:buy">매수</button><button class="mini sell" data-act="ordOpen" data-arg="stock:${id}:sell" ${h ? '' : 'disabled'}>매도</button></div></div>`; };
   const sortSeg = `<div class="seg wide sort">${SORTS.map(([k, l]) => `<button class="${UI.sort === k ? 'on' : ''}" data-act="sort" data-arg="${k}">${l}</button>`).join('')}</div>`;
   return `${sortSeg}<div class="card"><h3>${TABS.find(x => x.id === tab).label} <span class="r">${{ base: '이번 달 등락', cap: '시가총액 큰 순', up: '이번 달 상승률 순', down: '이번 달 하락률 순' }[UI.sort]}</span></h3><div class="list">${now.map(row).join('') || '<div class="sub">거래할 수 있는 종목이 없습니다.</div>'}</div></div>
     ${later.length ? `<div class="card"><h3>상장 예정 <span class="r">전생의 기억</span></h3><div class="list">${later.map(t => { const fi = MARKET.s[t.id].c.findIndex(v => v != null);
@@ -389,50 +387,125 @@ function orderCard(id) {
       : `<div class="note">${why}</div>`}
   </div>`;
 }
+// 선물 포지션 한 줄 (목록과 주문창에서 같이 쓴다)
+function futPosStrip(fid) {
+  const pos = S.fut[fid]; if (!pos) return '';
+  const pl = futPL(fid);
+  return `<div class="ord-pos"><span>${pos.dir > 0 ? '<b class="up">롱</b>' : '<b class="down">숏</b>'} ${pos.q}계약 · 진입 <b class="num">${pos.entry.toFixed(2)}</b><br><small class="muted num">증거금 ${fmtWon(pos.margin)}</small></span>
+    <span class="num ${pctCls(pl)}"><b>${fmtSigned(pl)}</b><br><small>${fmtPct(pl / pos.margin * 100)}</small></span><button class="btn ghost sm" data-act="futClose" data-arg="${fid}">청산</button></div>`;
+}
 function futuresView() {
-  return FUTURES.map(f => {
+  return `<div class="note">선물은 지수가 오를지(<b class="up">롱</b>) 내릴지(<b class="down">숏</b>)에 거는 계약입니다. 계약 금액의 ${FUT_MARGIN * 100}%만 증거금으로 맡기고, 달이 바뀔 때 증거금이 ${FUT_CUT * 100}% 아래로 떨어지면 강제 청산됩니다.</div>` + FUTURES.map(f => {
     if (!futOpen(f.id)) return `<div class="card"><h3>${f.name}</h3><div class="note">${icon('lock', 14)} ${f.open.replace('-', '년 ')}월 상장</div></div>`;
-    const p = futPrice(f.id), m = futMultKRW(f.id), pos = S.fut[f.id], key = 'idx:' + f.idx;
+    const p = futPrice(f.id), key = 'idx:' + f.idx;
     const mis = []; for (let mi = Math.max(0, S.mi - 36); mi <= revealedTo(key); mi++) mis.push(mi);
-    return `<div class="card"><h3>${f.name} <span class="r num">1포인트 = ${fmtWon(m)}</span></h3>
-      <div class="row" style="align-items:baseline"><div class="big num">${p.toFixed(2)}</div>${pctSpan(macroChange(f.idx))}<span class="sub">지난달 대비</span></div>
+    return `<div class="card dv"><div class="dv-head"><div><b>${f.name}</b><span class="sub num">1포인트 = ${fmtWon(futMultKRW(f.id))}</span></div>
+        <div class="dv-px"><b class="num">${p.toFixed(2)}</b>${pctSpan(macroChange(f.idx))}</div></div>
       ${lineChart(mis.map(mi => macroAt(f.idx, mi)), { split: S.mi - mis[0], labels: yearLabels(mis), label: f.name })}
       ${revealBox(key, mi => macroAt(f.idx, mi), v => v.toFixed(2))}
-      <div class="sub" style="margin-top:8px">1계약 증거금 ${fmtWon(p * m * FUT_MARGIN)} (${FUT_MARGIN * 100}%) · 수수료 계약 금액의 ${pct3(FUT_FEE)} · 달이 바뀔 때 증거금이 ${FUT_CUT * 100}% 아래로 떨어지면 강제 청산</div>
-      ${pos ? `<div class="kv" style="margin-top:8px"><b>포지션</b><span>${pos.dir > 0 ? '<b class="up">매수(상승)</b>' : '<b class="down">매도(하락)</b>'} ${pos.q}계약</span>
-        <b>진입가</b><span class="num">${pos.entry.toFixed(2)}</span><b>평가 손익</b><span class="num ${pctCls(futPL(f.id))}">${fmtSigned(futPL(f.id))}</span><b>증거금</b><span class="num">${fmtWon(pos.margin)}</span></div>
-        <button class="btn ghost sm" style="margin-top:8px;width:100%" data-act="futClose" data-arg="${f.id}">청산</button>` : ''}
-      <div style="margin-top:10px">${qtyBox([['1', 1], ['5', 5], ['10', 10], ['50', 50]])}</div>
-      <div class="btns" style="margin-top:8px"><button class="btn buy" data-act="futOpen" data-arg="${f.id}:1">매수 (상승)</button><button class="btn sell" data-act="futOpen" data-arg="${f.id}:-1">매도 (하락)</button></div></div>`;
+      ${futPosStrip(f.id)}
+      <button class="btn dv-go" data-act="ordOpen" data-arg="fut:${f.id}">주문하기 <small class="num">1계약 ${fmtWon(futUnitCost(f.id))}</small></button></div>`;
   }).join('');
 }
 function optionsView() {
-  const s = macro('ks200');
-  const rows = optChain().map(({ K }) => `<tr><td class="num">${K.toFixed(1)}</td>
-    <td><button class="btn buy sm" data-act="optBuy" data-arg="C:${K}">${optPremium('C', K).toFixed(2)}</button></td>
-    <td><button class="btn sell sm" data-act="optBuy" data-arg="P:${K}">${optPremium('P', K).toFixed(2)}</button></td></tr>`).join('');
-  const mine = S.opt.map((o, i) => `<div class="li"><div class="nm"><em>${o.type === 'C' ? '콜' : '풋'} ${o.K.toFixed(1)}</em><span class="badge">${o.q}계약</span></div>
-    <div class="pr num">${fmtWon(optValue(o))}</div><div class="ds">매입 ${fmtWon(o.cost)}</div>
-    <div class="ch"><button class="btn ghost sm" data-act="optSell" data-arg="${i}">매도</button></div></div>`).join('');
-  return `<div class="card"><h3>코스피200 옵션 <span class="r">만기 ${fmtYM(Math.min(LAST_MI, S.mi + 1))} 말</span></h3>
-    <div class="row" style="align-items:baseline"><div class="big num">${s.toFixed(2)}</div>${pctSpan(macroChange('ks200'))}<span class="sub">지난달 대비</span></div>
-    <div class="sub">1포인트 = ${fmtWon(OPT_MULT)} · 수수료 ${pct3(OPT_FEE)} · 변동성 ${(optVol(S.mi) * 100).toFixed(0)}% · 가격은 포인트</div>
-    ${revealBox('idx:ks200', mi => macroAt('ks200', mi), v => v.toFixed(2))}
-    <table style="width:100%;margin-top:10px;border-collapse:collapse;font-size:13px"><thead><tr><th style="text-align:left" class="sub">행사가</th><th class="sub">콜 (오르면 이익)</th><th class="sub">풋 (내리면 이익)</th></tr></thead>
-    <tbody>${rows}</tbody></table>
-    <div style="margin-top:10px">${qtyBox([['1', 1], ['10', 10], ['100', 100], ['500', 500]])}</div></div>
-    ${mine ? `<div class="card"><h3>보유 옵션</h3><div class="list">${mine}</div></div>` : ''}
-    <div class="note">이번 달 종가로 사서, 다음 달로 넘어갈 때 그달 종가로 정산합니다. 이익 구간이 아니면 0원이 됩니다.</div>`;
+  const s = macro('ks200'), key = 'idx:ks200', chain = optChain();
+  const mis = []; for (let mi = Math.max(0, S.mi - 36); mi <= revealedTo(key); mi++) mis.push(mi);
+  const rows = chain.map(({ K }) => `<button class="li oc" data-act="ordOpen" data-arg="opt:${K}"><span class="num">${K.toFixed(1)}</span><span class="num up">${fmtWon(optUnitCost('C', K))}</span><span class="num down">${fmtWon(optUnitCost('P', K))}</span></button>`).join('');
+  const mine = S.opt.map((o, i) => { const v = optValue(o);
+    return `<div class="li tk"><div class="tk-main"><div class="nm"><em>${o.type === 'C' ? '콜' : '풋'} ${o.K.toFixed(1)}</em><span class="badge">${o.q}계약</span></div><div class="pr num">${fmtWon(v)}</div>
+      <div class="ds">산 금액 ${fmtWon(o.cost)}</div><div class="ch num">${pctSpan((v / o.cost - 1) * 100)}</div></div>
+      <div class="tk-btns"><button class="mini sell" data-act="optSell" data-arg="${i}">매도</button></div></div>`; }).join('');
+  return `<div class="card dv"><div class="dv-head"><div><b>코스피200 옵션</b><span class="sub">만기 ${fmtYM(Math.min(LAST_MI, S.mi + 1))} 말 · 1포인트 = ${fmtWon(OPT_MULT)}</span></div>
+      <div class="dv-px"><b class="num">${s.toFixed(2)}</b>${pctSpan(macroChange('ks200'))}</div></div>
+    ${lineChart(mis.map(mi => macroAt('ks200', mi)), { split: S.mi - mis[0], labels: yearLabels(mis), label: '코스피200' })}
+    ${revealBox(key, mi => macroAt('ks200', mi), v => v.toFixed(2))}
+    <div class="oc-head sub"><span>행사가</span><span>콜 1계약 (오르면)</span><span>풋 1계약 (내리면)</span></div>
+    <div class="list">${rows}</div>
+    <button class="btn dv-go" data-act="ordOpen" data-arg="opt:">주문하기</button></div>
+    ${mine ? `<div class="card"><h3>보유 옵션 <span class="r">다음 달로 넘어갈 때 정산</span></h3><div class="list">${mine}</div></div>` : ''}
+    <div class="note">이번 달 종가로 사서, 다음 달로 넘어갈 때 그달 종가로 정산합니다. 콜은 지수가 행사가보다 높을수록, 풋은 낮을수록 돈이 되고, 아니면 0원이 됩니다. 수수료 ${pct3(OPT_FEE)} · 변동성 ${(optVol(S.mi) * 100).toFixed(0)}%</div>`;
 }
 function bondsView() {
-  const mine = S.bonds.map(pos => `<div class="li"><div class="nm"><em>${BOND[pos.b].name}</em></div><div class="pr num">${fmtWon(bondValue(pos))}</div>
-    <div class="ds">매입 금리 ${pos.y.toFixed(2)}% · ${fmtYM(pos.mat)} 만기</div><div class="ch"><button class="btn ghost sm" data-act="bondSell" data-arg="${pos.u}">매도</button></div></div>`).join('');
-  return `<div class="card"><h3>살 금액</h3>${amtBox(cashQuick())}</div>
-    ${BONDS.map(b => `<div class="card"><div class="row"><b>${b.name}</b><span class="sp"></span><b class="num up">연 ${bondYield(b.id).toFixed(2)}%</b></div>
-      <div class="sub">만기 ${b.term / 12}년 · 금리가 오르면 값이 내립니다${b.cur === 'USD' ? ' · 달러 자산(환율 영향)' : ''}</div>
-      <button class="btn sm" style="margin-top:8px;width:100%" data-act="bondBuy" data-arg="${b.id}">매수</button></div>`).join('')}
+  const list = BONDS.map(b => `<div class="li tk"><div class="tk-main"><div class="nm"><em>${b.name}</em></div><div class="pr num up">연 ${bondYield(b.id).toFixed(2)}%</div>
+      <div class="ds">만기 ${b.term / 12}년${b.cur === 'USD' ? ' · 달러 자산(환율 영향)' : ''}</div><div class="ch"></div></div>
+    <div class="tk-btns"><button class="mini buy" data-act="ordOpen" data-arg="bond:${b.id}">매수</button></div></div>`).join('');
+  const mine = S.bonds.map(pos => { const v = bondValue(pos);
+    return `<div class="li tk"><div class="tk-main"><div class="nm"><em>${BOND[pos.b].name}</em></div><div class="pr num">${fmtWon(v)}</div>
+      <div class="ds">연 ${pos.y.toFixed(2)}% · ${fmtYM(pos.mat)} 만기</div><div class="ch num">${pctSpan((v / bondCost(pos) - 1) * 100)}</div></div>
+      <div class="tk-btns"><button class="mini sell" data-act="bondSell" data-arg="${pos.u}">매도</button></div></div>`; }).join('');
+  return `<div class="card"><h3>채권 <span class="r">금리가 오르면 값이 내립니다</span></h3><div class="list">${list}</div></div>
     ${mine ? `<div class="card"><h3>보유 채권 <span class="r">이자는 매달 현금으로</span></h3><div class="list">${mine}</div></div>` : ''}`;
 }
+
+// ---- 가운데 주문창 ----
+// 주식: 매수/매도 고르기 · 선물: 수량 고르고 롱/숏 · 옵션: 행사가·수량 고르고 콜/풋 · 채권: 금액 고르고 매수
+function ordEst() {
+  const o = UI.order, q = UI.qty;
+  if (o.kind === 'fut') { const v = futPrice(o.id) * futMultKRW(o.id) * q; return `증거금 ${fmtWon(v * FUT_MARGIN)} · 수수료 ${fmtWon(v * FUT_FEE)}`; }
+  if (o.kind === 'opt') return `콜 ${fmtWon(optUnitCost('C', o.K) * q)} · 풋 ${fmtWon(optUnitCost('P', o.K) * q)}`;
+  if (o.kind === 'bond') return `이자 달마다 약 ${fmtWon(UI.amt * bondYield(o.id) / 1200 * (1 - INTEREST_TAX))}`;
+  return '';
+}
+// 계약 수 막대 + 비율 버튼 + 실행 버튼 둘
+function contractDock(max, go, note) {
+  UI.qty = Math.min(UI.qty, max);
+  return `<div class="dock"><div class="dock-row"><span class="sub">수량</span><span class="sub num dock-info">최대 ${max.toLocaleString()}계약 · 현금 ${fmtWon(S.cash)}</span></div>
+    ${max > 0 ? `<input type="range" class="qty-range" min="0" max="${max}" step="1" value="${UI.qty}" data-input="qty" aria-label="계약 수">
+      <div class="dock-row"><b class="num qty-big" id="qtyLabel">${UI.qty.toLocaleString()}계약</b><span class="num sub dock-est" id="estLabel">${ordEst()}</span></div>
+      <div class="quick q4">${[[0.1, '10%'], [0.25, '25%'], [0.5, '50%'], [1, '최대']].map(([p, l]) => `<button data-act="pct" data-arg="${p}">${l}</button>`).join('')}</div>
+      <div class="ord-go2">${go.map(([arg, cls, label, sub, unit, lock]) => `<button class="btn ${cls} ord-go" data-act="ordGo" data-arg="${arg}" data-unit="${unit}"${lock ? ' data-lock="1" disabled' : UI.qty > 0 && UI.qty * unit <= S.cash + 1e-6 ? '' : ' disabled'}>${label}<small>${sub}</small></button>`).join('')}</div>`
+      : `<div class="note">${note}</div>`}</div>`;
+}
+function orderPopHTML() {
+  const o = UI.order; let kind = '', name = '', body = '';
+  if (o.kind === 'stock') {
+    const id = o.id, h = S.hold[id], t = TK[id];
+    kind = TABS.find(x => x.id === (t.tab === 'COIN' || t.tab === 'ETF' || t.tab === 'US' ? t.tab : tkTab(id))).label; name = tkName(id);
+    body = `<div class="ord-price"><b class="num">${fmtPrice(id, price(id))}</b>${pctSpan(changePct(id))}<span class="sp"></span>
+        ${h ? `<span class="sub num">보유 ${fmtQty(id, h.q)} · ${pctSpan((holdValue(id) / h.cost - 1) * 100)}</span>` : ''}</div>
+      ${orderCard(id)}
+      <button class="btn ghost sm" data-act="ordDetail">차트·상세 보기 ${icon('next', 14)}</button>`;
+  } else if (o.kind === 'fut') {
+    const f = FUT[o.id], pos = S.fut[o.id];
+    kind = '선물'; name = f.name;
+    body = `<div class="ord-price"><b class="num">${futPrice(o.id).toFixed(2)}</b>${pctSpan(macroChange(f.idx))}<span class="sp"></span><span class="sub num">1포인트 = ${fmtWon(futMultKRW(o.id))}</span></div>
+      ${futPosStrip(o.id)}
+      ${contractDock(futMax(o.id), [['1', 'buy', '롱 ▲', '오르면 이익', futUnitCost(o.id), pos && pos.dir < 0], ['-1', 'sell', '숏 ▼', '내리면 이익', futUnitCost(o.id), pos && pos.dir > 0]],
+        pos && pos.q >= POS_LIMIT.fut ? '포지션 한도(' + POS_LIMIT.fut + '계약)에 닿았습니다.' : '증거금이 부족합니다. (1계약 ' + fmtWon(futUnitCost(o.id)) + ')')}
+      ${pos ? `<div class="sub">반대 방향은 지금 포지션을 청산한 뒤에 걸 수 있습니다.</div>` : ''}`;
+  } else if (o.kind === 'opt') {
+    const chain = optChain(), s = macro('ks200');
+    if (!chain.some(c => c.K === o.K)) o.K = chain.reduce((a, c) => Math.abs(c.K - s) < Math.abs(a.K - s) ? c : a).K;   // 처음엔 지금 지수에 가장 가까운 행사가
+    const K = o.K, atm = chain.reduce((a, c) => Math.abs(c.K - s) < Math.abs(a.K - s) ? c : a).K;
+    kind = '옵션 · 만기 ' + fmtYM(Math.min(LAST_MI, S.mi + 1)) + ' 말'; name = '코스피200 옵션';
+    body = `<div class="ord-price"><span class="sub">코스피200</span><b class="num">${s.toFixed(2)}</b>${pctSpan(macroChange('ks200'))}</div>
+      <div class="sub">행사가</div>
+      <div class="chips kchips">${chain.map(c => `<button class="${c.K === K ? 'on' : ''}" data-act="ordK" data-arg="${c.K}">${c.K.toFixed(1)}${c.K === atm ? ' · 지금' : ''}</button>`).join('')}</div>
+      <div class="opt-prem"><div><small>콜 1계약 · 오르면 이익</small><b class="num up">${fmtWon(optUnitCost('C', K))}</b><span class="sub num">${optPremium('C', K).toFixed(2)}포인트</span></div>
+        <div><small>풋 1계약 · 내리면 이익</small><b class="num down">${fmtWon(optUnitCost('P', K))}</b><span class="sub num">${optPremium('P', K).toFixed(2)}포인트</span></div></div>
+      ${contractDock(optMax(K), [['C', 'buy', '콜 ▲', '오르면 이익', optUnitCost('C', K)], ['P', 'sell', '풋 ▼', '내리면 이익', optUnitCost('P', K)]], '현금이 부족하거나 이번 달 한도(' + POS_LIMIT.opt + '계약)에 닿았습니다.')}`;
+  } else if (o.kind === 'bond') {
+    const b = BOND[o.id], y = bondYield(o.id), max = Math.floor(S.cash / 10000) * 10000;
+    UI.amt = Math.min(UI.amt, max);
+    kind = '채권'; name = b.name;
+    body = `<div class="ord-price"><b class="num up">연 ${y.toFixed(2)}%</b><span class="sp"></span><span class="sub">만기 ${b.term / 12}년${b.cur === 'USD' ? ' · 달러 자산' : ''}</span></div>
+      <div class="sub">이자는 매달 현금으로 들어옵니다. 만기 전에 팔면 그때 금리에 따라 값이 달라집니다(금리가 오르면 내림).</div>
+      <div class="dock"><div class="dock-row"><span class="sub">살 금액</span><span class="sub num dock-info">현금 ${fmtWon(S.cash)}</span></div>
+      ${max >= 10000 ? `<input type="range" class="qty-range" min="0" max="${max}" step="10000" value="${UI.amt}" data-input="amt" aria-label="금액">
+        <div class="dock-row"><b class="num qty-big" id="amtLabel">${fmtWon(UI.amt)}</b><span class="num sub dock-est" id="estLabel">${ordEst()}</span></div>
+        <div class="quick q4">${[[0.1, '10%'], [0.25, '25%'], [0.5, '50%'], [1, '전액']].map(([p, l]) => `<button data-act="apct" data-arg="${p}">${l}</button>`).join('')}</div>
+        <button class="btn buy ord-go" data-act="ordGo" data-arg="buy" ${UI.amt >= 10000 ? '' : 'disabled'}>매수하기</button>` : '<div class="note">1만원 이상 있어야 살 수 있습니다.</div>'}</div>`;
+  }
+  return `<div class="pop" data-act="ordScrim"><div class="pop-card order">
+    <div class="ord-head"><div><small class="pop-kind">${kind}</small><h3>${name}</h3></div><button class="icon-btn" data-act="ordClose" aria-label="닫기">${icon('close', 18)}</button></div>
+    ${body}</div></div>`;
+}
+// 막대를 끄는 동안 실행 버튼만 켜고 끈다 (계약 수 × 한 계약 값이 현금을 넘으면 끔)
+function goBtns(n) {
+  const ph = $('phone'); if (!ph || !ph.querySelectorAll) return;
+  ph.querySelectorAll('.ord-go').forEach(b => { if (!b.dataset.lock) b.disabled = !(n > 0) || (b.dataset.unit ? n * +b.dataset.unit > S.cash + 1e-6 : false); });
+}
+
 // ---- 로또 6/45 ----
 const ballColor = n => n <= 10 ? '#e6a700' : n <= 20 ? '#3d8fe0' : n <= 30 ? '#e5484d' : n <= 40 ? '#868b94' : '#3fa34d';   // 실제 공 색과 같은 번호대
 const ball = (n, cls) => `<span class="ball ${cls || ''}" style="background:${ballColor(n)}">${n}</span>`;
@@ -822,14 +895,18 @@ function sold(r) { if (r.ok) { save(); if (r.v && r.v.kind === 'sold') UI.pops.p
 const ACT = {
   tab(t) { UI.tab = t; UI.bubble = ''; render(); },
   sheet(s) { UI.sheet = s; UI.giftOpen = false; UI.confirmNew = false; if (s === 'stocks' && !UI.sel) UI.sel = null; render(); },
-  close() { UI.sheet = null; UI.sel = null; UI.giftOpen = false; render(); },
+  close() { UI.sheet = null; UI.sel = null; UI.order = null; UI.giftOpen = false; render(); },
   scrim(_, el, ev) { if (ev && ev.target === el) ACT.close(); },
   unsel() { UI.sel = null; render(); },
   ftab(t) { const tb = TABS.find(x => x.id === t); UI.ftab = t; UI.sel = null; if (!tabOpen(t)) toast(`${tb.label}은 ${tb.open.replace('-', '년 ')}월에 열립니다.`); render(); },
   sel(id) { UI.sel = id; UI.qty = 0; UI.side = 'buy'; render(); },
   side(s) { UI.side = s; UI.qty = 0; render(); },
-  pct(p) { const id = UI.sel, max = orderMax(id); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(qtyStep(id), roundQty(id, max * p))); render(); },
-  trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) UI.qty = 0; sold(r); },
+  pct(p) {
+    const o = UI.order;
+    if (o && o.kind !== 'stock') { const max = o.kind === 'fut' ? futMax(o.id) : optMax(o.K); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(1, Math.floor(max * p))); return render(); }
+    const id = o ? o.id : UI.sel, max = orderMax(id); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(qtyStep(id), roundQty(id, max * p))); render();
+  },
+  trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) { UI.qty = 0; UI.order = null; if (!r.v) toast(S.log[0].t); } sold(r); },
   shopTab(t) { UI.shopTab = t; render(); },
   shopOpen() { UI.sheet = 'shop'; UI.shopTab = 'gear'; render(); },
   gearBuy(id) { const r = buyGear(id); if (r.ok) { toast(GR[id].name + (r.v ? '을(를) 입었습니다.' : '을(를) 샀습니다. 상태 탭에서 입을 수 있습니다.')); save(); } render(); },
@@ -839,8 +916,6 @@ const ACT = {
   openTicker(id) { const t = TK[id]; UI.sheet = 'stocks'; UI.ftab = t.tab === 'COIN' || t.tab === 'ETF' || t.tab === 'US' ? t.tab : tkTab(id); ACT.sel(id); },
   range(r) { UI.range = r; render(); },
   sort(k) { UI.sort = k; render(); },
-  qty(d) { const st = UI.sel && isCoin(UI.sel) ? 0.01 : 1; UI.qty = Math.max(st, +(UI.qty + d * st).toFixed(4)); render(); },
-  qtySet(v) { UI.qty = v === 'max' ? Math.max(UI.sel && isCoin(UI.sel) ? 0.0001 : 1, maxBuy(UI.sel)) : +v; render(); },
   amtSet(v) { UI.amt = +v; render(); },
   buy(id) { if (buy(id, UI.qty).ok) { save(); } render(); },
   sell(id) { sold(sell(id, UI.qty)); },
@@ -849,11 +924,8 @@ const ACT = {
   revealN(a) { const i = a.lastIndexOf('|'), key = a.slice(0, i), m = +a.slice(i + 1); if ((m === 1 ? revealNext(key, revealLabel(key)) : revealUpTo(key, m, revealLabel(key))).ok) save(); render(); },
   estSel(id) { UI.estSel = UI.estSel === id ? null : id; render(); },
   pview(v) { UI.pview = v; render(); },
-  futOpen(a) { const [fid, d] = a.split(':'); if (openFut(fid, +d, UI.qty).ok) save(); render(); },
-  futClose(fid) { sold(closeFut(fid)); },
-  optBuy(a) { const [t, k] = a.split(':'); if (buyOpt(t, +k, UI.qty).ok) save(); render(); },
+  futClose(fid) { const r = closeFut(fid); if (r.ok) UI.order = null; sold(r); },
   optSell(i) { sold(sellOpt(+i)); },
-  bondBuy(b) { if (buyBond(b, UI.amt).ok) save(); render(); },
   bondSell(u) { sold(sellBond(+u)); },
   dep() { deposit(Math.min(UI.amt, S.cash)); save(); render(); },
   wd() { withdraw(UI.amt); save(); render(); },
@@ -867,6 +939,24 @@ const ACT = {
   estMgrBack() { UI.sheet = 'estate'; render(); },
   luxBuy(id) { if (buyLux(id).ok) save(); render(); },
   luxSell(id) { sold(sellLux(id)); },
+  ordOpen(a) {
+    const [kind, id, side] = a.split(':');
+    UI.order = { kind, id: kind === 'opt' ? null : id, K: kind === 'opt' && id ? +id : null };
+    UI.qty = 0; UI.amt = 0; if (kind === 'stock') UI.side = side || 'buy';
+    render();
+  },
+  ordClose() { UI.order = null; render(); },
+  ordScrim(_, el, ev) { if (ev && ev.target === el) ACT.ordClose(); },
+  ordK(k) { UI.order.K = +k; UI.qty = Math.min(UI.qty, optMax(+k)); render(); },
+  ordDetail() { const id = UI.order.id; UI.order = null; UI.sheet = 'stocks'; UI.sel = id; render(); },
+  ordGo(a) {
+    const o = UI.order; if (!o) return;
+    const r = o.kind === 'fut' ? openFut(o.id, +a, UI.qty) : o.kind === 'opt' ? buyOpt(a, o.K, UI.qty) : o.kind === 'bond' ? buyBond(o.id, UI.amt) : null;
+    if (!r) return;
+    if (r.ok) { UI.order = null; UI.qty = 0; toast(S.log[0].t); }
+    sold(r);
+  },
+  apct(p) { UI.amt = Math.floor(S.cash * +p / 10000) * 10000; render(); },
   popClose() { UI.pops.shift(); afterTurn(); },
   popScrim(_, el, ev) { if (ev && ev.target === el) ACT.popClose(); },
   report(a) { const [m0, m1, k] = a.split(':'); const r = periodReport(+m0, +m1, k); if (r) UI.pops.push(r); render(); },
@@ -938,10 +1028,15 @@ const ACT = {
 function onInput(name, value) {
   if (name === 'qty') {   // 막대를 끄는 동안에는 다시 그리지 않고 글자만 바꾼다
     UI.qty = Math.max(0, +value || 0);
-    if (UI.sel && TK[UI.sel]) {
-      const q = $('qtyLabel'), e = $('estLabel'), b = $('tradeBtn');
-      if (q) q.textContent = fmtQty(UI.sel, UI.qty);
-      if (e) e.textContent = tradeEst(UI.sel);
+    const o = UI.order, id = o ? (o.kind === 'stock' ? o.id : null) : UI.sel;
+    const q = $('qtyLabel'), e = $('estLabel'), b = $('tradeBtn');
+    if (o && o.kind !== 'stock') {   // 선물·옵션: 계약 수
+      if (q) q.textContent = UI.qty.toLocaleString() + '계약';
+      if (e) e.textContent = ordEst();
+      goBtns(UI.qty);
+    } else if (id && TK[id]) {
+      if (q) q.textContent = fmtQty(id, UI.qty);
+      if (e) e.textContent = tradeEst(id);
       if (b) b.disabled = !(UI.qty > 0);
     }
   } else if (name === 'bet' && UI.bet) {
@@ -955,6 +1050,7 @@ function onInput(name, value) {
   } else if (name === 'amt') {
     UI.amt = Math.max(0, +value || 0);
     const e = $('amtLabel'); if (e) e.textContent = fmtWon(UI.amt);
+    if (UI.order && UI.order.kind === 'bond') { const x = $('estLabel'); if (x) x.textContent = ordEst(); goBtns(UI.amt >= 10000 ? 1 : 0); }
   } else if (name === 'name') UI.name = value;
 }
 function applyTheme() {
