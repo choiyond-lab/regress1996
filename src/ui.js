@@ -1,6 +1,6 @@
 // ===== 화면 =====
 // 화면 상태는 저장하지 않는다. 게임 상태는 S, 이야기 진행은 RUN 에 있다
-const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, confirmNext: false, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
+const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
   typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q', order: null, futLev: FUT_LEV };
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -70,7 +70,7 @@ function topbarHTML() {
 function tabbarHTML() {
   const t = [['main', '메인', 'home'], ['invest', '투자', 'chart'], ['people', '인연', 'heart'], ['status', '상태', 'user']];
   const next = S.ended ? '<button class="next" disabled><span><b>엔딩</b></span></button>'
-    : `<button class="next ${UI.confirmNext ? 'confirm' : ''}" data-act="next" aria-label="다음 달로 넘기기"><span><b>${UI.confirmNext ? '넘길까요?' : '다음 달'}</b><small class="num">${S.mi >= LAST_MI ? '마지막 달' : fmtYM(S.mi + 1)}</small></span>${icon('next', 18)}</button>`;
+    : `<button class="next" data-act="next" aria-label="다음 달로 넘기기"><span><b>다음 달</b><small class="num">${S.mi >= LAST_MI ? '마지막 달' : fmtYM(S.mi + 1)}</small></span>${icon('next', 18)}</button>`;
   return `<nav class="tabbar">${t.map(([k, l, i]) => `<button class="${UI.tab === k ? 'on' : ''}" data-act="tab" data-arg="${k}">${icon(i, 22)}${l}</button>`).join('')}${next}</nav>`;
 }
 function viewHTML() {
@@ -824,7 +824,7 @@ function storyHTML() {
   const full = !!x.L.c || UI.typedKey !== x.key || UI.typed >= x.text.length || !S.textSpeed;
   const shown = full ? x.text : x.text.slice(0, UI.typed);
   return `<div class="story" data-act="storyTap"><div class="story-card">
-    <div class="story-art">${artHTML(RUN.art)}<span class="story-title">${esc(RUN.title || '')}</span></div>
+    <div class="story-art">${artHTML(RUN.art)}<span class="story-title">${esc(RUN.title || '')}</span>${x.L.c ? '' : `<button class="story-skip" data-act="storySkip">건너뛰기 ${icon('next', 14)}</button>`}</div>
     <div class="story-box">
       ${x.who ? `<span class="story-name ${x.isMe ? 'me' : ''}">${esc(x.who)}</span>` : ''}
       <div class="story-text ${x.T.n ? 'narr' : ''} ${x.isMe ? 'mono' : ''}">${esc(shown)}</div>
@@ -894,6 +894,8 @@ function titleHTML() {
 }
 
 // ---- 동작 ----
+// 함께 시간을 보낸 뒤 그 사람이 하는 말
+const OUTING_SAY = { family: '오늘 같이 나오길 잘했다. 고마워.', romance: '오늘 정말 좋았어. 또 보자.', friend: '오늘 재밌었다! 다음에 또 놀자.', mentor: '오랜만에 좋은 시간이었구나.', rival: '…뭐, 나쁘지 않았어.' };
 // 팔았으면 저장하고 결과 창을 띄운다
 function sold(r) { if (r.ok) { save(); if (r.v && r.v.kind === 'sold') UI.pops.push(r.v); } render(); }
 const ACT = {
@@ -910,7 +912,11 @@ const ACT = {
     if (o && o.kind !== 'stock') { const max = o.kind === 'fut' ? futMax(o.id, o.lev) : optMax(o.K); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(1, Math.floor(max * p))); return render(); }
     const id = o ? o.id : UI.sel, max = orderMax(id); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(qtyStep(id), roundQty(id, max * p))); render();
   },
-  trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) { UI.qty = 0; UI.order = null; if (!r.v) toast(S.log[0].t); } sold(r); },
+  trade(id) {
+    const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty);
+    if (r.ok) { UI.qty = 0; UI.order = null; if (!r.v) toast(S.log[0].t); if (!S.hold[id]) UI.side = 'buy'; }   // 다 팔았으면 다시 매수 쪽으로
+    sold(r);
+  },
   shopTab(t) { UI.shopTab = t; render(); },
   shopOpen() { UI.sheet = 'shop'; UI.shopTab = 'gear'; render(); },
   gearBuy(id) { const r = buyGear(id); if (r.ok) { toast(GR[id].name + (r.v ? '을(를) 입었습니다.' : '을(를) 샀습니다. 상태 탭에서 입을 수 있습니다.')); save(); } render(); },
@@ -968,8 +974,8 @@ const ACT = {
   finP(k) { UI.finP = k; render(); },
   shopBuy(id) { if (buyShop(id).ok) { toast(ITEM[id].name + '을(를) 샀습니다.'); save(); } render(); },
   person(id) { UI.sheet = 'person'; UI.sel = id; UI.giftOpen = false; render(); },
-  talk(id) { const r = talk(id); if (r.ok) UI.say[id] = r.v; afterTurn(); },
-  outing(id) { const r = outing(id); if (r.ok) { UI.sheet = null; UI.bubble = `${CH[id].name}와 즐거운 시간을 보냈습니다.`; } afterTurn(); },
+  talk(id) { const r = talk(id); if (r.ok) { UI.say[id] = r.v.line; toast(`호감 +${r.v.g.toFixed(1)}`); save(); } afterTurn(); },
+  outing(id) { const r = outing(id); if (r.ok) { UI.say[id] = OUTING_SAY[CH[id].kind] || OUTING_SAY.friend; toast(`${wa(CH[id].name)} ${r.v.label} · 호감 +${r.v.g.toFixed(1)}`); save(); } afterTurn(); },
   giftOpen() { UI.giftOpen = !UI.giftOpen; render(); },
   gift(a) { const [id, k] = a.split(':'); if (giveGift(id, k).ok) { UI.giftOpen = false; UI.say[id] = CH[id].likes.includes(k) ? '어? 이거 내가 좋아하는 건데! 고마워.' : '고마워. 잘 쓸게.'; save(); } afterTurn(); },
   money(id) { if (giveMoney(id).ok) { UI.say[id] = '뭘 이런 걸 다… 고맙다.'; save(); } render(); },
@@ -989,12 +995,9 @@ const ACT = {
   lottoClear() { UI.lottoPick = []; render(); },
   lottoBuy() { if (buyLotto(UI.lottoPick).ok) { UI.lottoPick = []; save(); } render(); },
   lottoReveal() { if (lottoReveal().ok) save(); render(); },
-  // 다음 달: 아직 할 수 있는 행동이 남았으면 한 번 더 눌러야 넘어간다
+  // 다음 달: 한 번 누르면 넘어간다
   next() {
     if (S.ended || RUN) return;
-    const canAct = ['study', 'gym', 'work'].some(k => !actionBlocked(k));
-    if (canAct && !UI.confirmNext) { UI.confirmNext = true; toast(`체력이 ${Math.round(S.sta)} 남았습니다. 한 번 더 누르면 다음 달로 넘어갑니다.`); return render(); }
-    UI.confirmNext = false;
     const r = nextMonth();
     if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`;
       const os = takeOptSettle(); if (os) UI.pops.push(os);               // 옵션이 만기로 정산됐으면 결과 창
@@ -1010,6 +1013,7 @@ const ACT = {
     if (x.L.c) return;
     storyAdvance(); afterTurn();
   },
+  storySkip() { clearInterval(typeTimer); storySkip(); afterTurn(); },
   choose(k) { storyChoose(+k); afterTurn(); },
   betPick(k) { if (UI.bet) UI.bet.k = +k; render(); },
   betPct(p) { const q = SPORT[UI.bet && UI.bet.id]; if (!q) return; const { bk, cash } = betState(q); UI.bet.stake = +p >= 1 ? cash : Math.floor(cash * p / bk.unit) * bk.unit; render(); },

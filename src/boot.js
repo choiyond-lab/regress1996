@@ -53,7 +53,6 @@ function bindEvents() {
     const el = ev.target.closest && ev.target.closest('[data-act]');
     if (!el || el.disabled) return;
     const fn = ACT[el.dataset.act];
-    if (el.dataset.act !== 'next') UI.confirmNext = false;   // 다른 걸 누르면 넘기기 확인을 취소한다
     if (fn) fn(el.dataset.arg, el, ev);
   });
   document.addEventListener('input', ev => {

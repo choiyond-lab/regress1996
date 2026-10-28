@@ -193,11 +193,9 @@ expect(jobInfo().pay > 500000, '11-14 회사원 급여');
 fresh(); at('1999-01'); S.cash = 1e7; buy('ss', 10);
 const nw12 = netWorth(); next();
 expect(near(S.monthStartNW, nw12), '12-1 이달 수익은 넘기기 직전 자산부터');
-UI.confirmNext = false; S.sta = maxSta();
-const m12 = S.mi; ACT.next();
-expect(S.mi === m12 && UI.confirmNext, '12-2 체력이 남았으면 한 번 더 눌러야 넘어감');
-ACT.next(); playStory();
-expect(S.mi === m12 + 1 && !UI.confirmNext, '12-3 두 번째에 넘어감');
+S.sta = maxSta();
+const m12 = S.mi; ACT.next(); playStory();
+expect(S.mi === m12 + 1, '12-2 체력이 남아 있어도 한 번 누르면 넘어감');
 S.sta = 0; S.mo = { rest: 1, sns: 1 }; const m13 = S.mi; ACT.next(); playStory();
 expect(S.mi === m13 + 1, '12-4 할 일이 없으면 바로 넘어감');
 
@@ -414,7 +412,7 @@ ACT.trade('ss'); expect(S.hold.ss && S.hold.ss.q === 3 && UI.qty === 0, '22-9 �
 ACT.side('sell'); expect(orderMax('ss') === 3, '22-10 매도는 보유 수량이 최대');
 ACT.pct(0.5); expect(UI.qty === 1, '22-11 매도 50% (내림)');
 ACT.pct(1); ACT.trade('ss'); expect(!S.hold.ss, '22-12 매도 최대 = 전량');
-h = draw('22 매도창 빈 보유', () => {}); expect(/보유 수량이 없습니다/.test(h), '22-13 보유 없으면 안내');
+expect(UI.side === 'buy', '22-13a 다 팔면 매수 쪽으로'); h = draw('22 매도창 빈 보유', () => ACT.side('sell')); expect(/보유 수량이 없습니다/.test(h), '22-13 보유 없으면 안내');
 ACT.side('buy'); S.cash = 0; h = draw('22 현금 없음', () => {}); expect(/현금이 부족/.test(h), '22-14 현금 없으면 안내');
 UI.sheet = null; UI.sel = null;
 
@@ -561,6 +559,23 @@ expect(swing('gme', '2020-12', '2021-01') > 5, '29-7 게임스탑 2021년 1월 �
 expect(swing('shinpoong', '2020-01', '2020-09') > 10, '29-8 신풍제약 2020년 폭등 ×' + swing('shinpoong', '2020-01', '2020-09').toFixed(1));
 expect(swing('aig', '2007-12', '2009-03') < 0.1, '29-9 AIG 2008년 폭락');
 
+// ---------- 36. UX: 이야기 건너뛰기 · 인연 창 유지 · 조사 ----------
+UI.sheet = null; RUN = null; newGame({ seed: 1 }); storyStart();
+expect(RUN && RUN.key === 'story:prologue', '36-0 프롤로그 시작');
+h = draw('36 건너뛰기 버튼', () => {});
+expect(/data-act="storySkip"/.test(h), '36-1 이야기 창에 건너뛰기');
+ACT.storySkip();
+expect(!RUN || RUN.key !== 'story:prologue' || (RUN.cur && RUN.cur.c), '36-2 건너뛰기는 이 이야기의 선택지나 끝까지');
+playStory();
+fresh(); at('2003-06'); S.cash = 1e7; UI.sheet = 'person'; UI.sel = 'mom'; UI.tab = 'people';
+const aff36 = S.people.mom.aff;
+h = draw('36 함께 시간', () => ACT.outing('mom'));
+expect(UI.sheet === 'person' && S.people.mom.aff > aff36 && UI.say.mom && /호감 \+/.test(UI.toastMsg), '36-3 함께 시간 보낸 뒤에도 인물 창 유지');
+expect(wa('박미숙') === '박미숙과' && wa('엄마') === '엄마와', '36-4 와/과');
+h = draw('36 이야기하기', () => ACT.talk('dad'));
+expect(UI.say.dad && /호감 \+/.test(UI.toastMsg) && !S.log.slice(0, 3).some(l => /[가-힣]와 이야기/.test(l.t) && /[각-힣]와/.test(l.t) && /과와/.test(l.t)), '36-5 이야기하기 결과');
+UI.sheet = null; UI.tab = 'main';
+
 // ---------- 35. 선물 레버리지 2·5·10배 ----------
 fresh(); at('2008-08'); S.cash = 1e10; S.flags.account = true; UI.pops = []; UI.order = null;
 const n35 = futPrice('kf') * futMultKRW('kf');
@@ -583,8 +598,8 @@ expect(UI.order.lev === 10 && /data-arg="2" disabled/.test(h) && /10배/.test(h)
 ACT.ordLev('2'); expect(UI.order.lev === 10, '35-9 잠긴 배수는 못 바꿈');
 ACT.ordClose();
 // 2008년 폭락: 10배 롱은 다음 달 바로 강제 청산되고 결과 창
-playStory(); RUN = null; S.sta = 0; UI.confirmNext = true;
-for (let k = 0; k < 3 && S.fut.kf; k++) { UI.confirmNext = true; playStory(); RUN = null; ACT.next(); if (S.fut.kf) UI.pops = []; }
+playStory(); RUN = null; S.sta = 0;
+for (let k = 0; k < 3 && S.fut.kf; k++) { playStory(); RUN = null; ACT.next(); if (S.fut.kf) UI.pops = []; }
 expect(!S.fut.kf && UI.pops.some(p => /강제 청산/.test(p.title)), '35-10 강제 청산 결과 창');
 UI.pops = []; UI.sheet = null; UI.ftab = 'KS';
 // 레버리지 전에 저장한 포지션
@@ -600,12 +615,12 @@ expect(/class="li tk rows"/.test(h) && !/class="rank/.test(h), '34-1 버튼이 �
 UI.sheet = null; UI.sort = 'base';
 const K34 = optChain()[2].K;
 buyOpt('C', K34, 2); buyOpt('P', optChain()[0].K, 1);
-playStory(); RUN = null; S.sta = 0; UI.confirmNext = true;
+playStory(); RUN = null; S.sta = 0;
 h = draw('34 옵션 만기', () => ACT.next());
 const p34 = UI.pops.find(p => p.title === '옵션 만기 정산');
 expect(!S.opt.length && p34 && p34.rows.length === 4 && /코스피200 옵션 2건/.test(p34.name), '34-2 만기 정산 결과 창');
 expect(Math.abs(p34.pl - (p34.rows[2][1] - p34.rows[3][1])) < 1 && /옵션 만기 정산/.test(h), '34-3 손익 = 받은 돈 - 산 금액');
-UI.pops = []; playStory(); RUN = null; UI.confirmNext = true; ACT.next();
+UI.pops = []; playStory(); RUN = null; ACT.next();
 expect(!UI.pops.some(p => p.title === '옵션 만기 정산') && S.optSettle == null, '34-4 옵션이 없으면 정산 창 없음');
 UI.pops = [];
 
@@ -620,6 +635,7 @@ h = draw('33 주식 주문창', () => ACT.ordOpen('stock:ss:sell'));
 expect(UI.order && UI.side === 'sell' && /pop-card order/.test(h) && /매도하기/.test(h) && /data-act="ordClose"/.test(h), '33-3 매도 버튼 → 가운데 주문창');
 onInput('qty', '4'); ACT.trade('ss');
 expect(!UI.order && S.hold.ss.q === 6 && UI.pops.length === 1 && UI.pops[0].kind === 'sold', '33-4 주문창에서 매도 → 결과 창');
+UI.sel = 'ss'; UI.side = 'sell'; UI.qty = 6; ACT.trade('ss'); expect(!S.hold.ss && UI.side === 'buy', '33-4b 다 팔면 매수 쪽으로'); buy('ss', 6); UI.sel = null; UI.pops = [];
 UI.pops = [];
 ACT.ordOpen('stock:hmc:buy'); onInput('qty', '3'); ACT.trade('hmc');
 expect(!UI.order && S.hold.hmc && S.hold.hmc.q === 3 && !UI.pops.length, '33-5 주문창에서 매수');
@@ -693,7 +709,7 @@ expect(ymOf(S.mi) === '1997-04' && rep32.period === 'q' && rep32.title === '1997
 next(); expect(periodDue() === null, '32-9 분기 중간에는 결산 없음');
 // 다음 달 버튼으로 넘기면 결산 창이 이야기보다 먼저
 while (month() !== 6) next();
-S.sta = 0; UI.confirmNext = true; UI.pops = []; UI.sheet = null; RUN = null;
+S.sta = 0; UI.pops = []; UI.sheet = null; RUN = null;
 h = draw('32 결산 창', () => ACT.next());
 expect(UI.pops.length === 1 && UI.pops[0].kind === 'report' && /1997년 2분기 결산/.test(h) && /class="bars"/.test(h), '32-10 다음 달 버튼 → 결산 창');
 ACT.popClose(); playStory();

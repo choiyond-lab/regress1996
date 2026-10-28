@@ -86,7 +86,7 @@ input{font:inherit;color:var(--ink)}
 .tabbar .next span{display:grid;line-height:1.15;text-align:left}
 .tabbar .next b{font-size:14px;font-weight:900;white-space:nowrap}
 .tabbar .next small{font-size:10px;font-weight:500;opacity:.85}
-.tabbar .next.confirm{background:var(--warn)}
+
 .tabbar .next:active:not(:disabled){transform:scale(.96)}
 
 /* ---- 메인 ---- */
@@ -433,6 +433,7 @@ input{font:inherit;color:var(--ink)}
 .story-art .art-char{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 35%,#3b4466,#141826 70%)}
 .story-art .art-char .pt{position:absolute;left:50%;top:3%;height:175%;transform:translateX(-50%);animation:pop .3s ease-out}
 .story-art .art-char svg{position:absolute;left:50%;bottom:0;height:92%;transform:translateX(-50%)}
+.story-skip{position:absolute;right:10px;top:10px;display:flex;align-items:center;gap:2px;background:rgba(0,0,0,.5);color:#fff;font-size:12px;font-weight:700;padding:5px 8px 5px 12px;border-radius:999px}
 .story-title{position:absolute;left:12px;top:12px;background:rgba(0,0,0,.5);color:#fff;font-size:12px;font-weight:700;padding:4px 11px;border-radius:999px}
 .story-box{flex:none;min-height:34%;max-height:60%;overflow-y:auto;background:var(--surface);border-radius:18px 18px 0 0;margin-top:-18px;position:relative;padding:16px;display:flex;flex-direction:column;gap:10px;cursor:default}
 .story-name{align-self:flex-start;font-weight:900;font-size:14px;padding:3px 12px;border-radius:999px;background:var(--ink);color:var(--bg)}
@@ -710,7 +711,7 @@ const KOSDAQ_PRE = {
 
 
 // ===== 게임 데이터 상수 — 밸런스를 조정할 곳 =====
-const VERSION = 'v0.9.2';
+const VERSION = 'v0.9.3';
 const SAVE_KEY = 'regress1996-save';
 const PORTRAIT_DIR = 'assets/portrait/';
 
@@ -2367,9 +2368,9 @@ function talk(id) {
   const g = addAff(id, 2 + cha() / 30);
   const pool = CH[id].talk[stageOfAge(age())] || CH[id].talk.adult || CH[id].talk.teen || CH[id].talk.kid;
   const line = pool[Math.floor(rand() * pool.length)].replace(/준호/g, S.name.slice(1));
-  log(`${CH[id].name}와 이야기했습니다 · 호감 +${g.toFixed(1)}`, 'love');
+  log(`${wa(CH[id].name)} 이야기했습니다 · 호감 +${g.toFixed(1)}`, 'love');
   checkEvents();
-  return ok(line);
+  return ok({ line, g });
 }
 function outing(id) {
   const p = S.people[id]; if (!p) return fail('');
@@ -2381,9 +2382,9 @@ function outing(id) {
   if (S.cash < o.cost) return fail('돈이 부족합니다.');
   S.sta -= o.sta; S.cash -= o.cost; p.outMi = S.mi;
   const g = addAff(id, 5 + cha() / 15);
-  log(`${CH[id].name}와 ${o.label} · 호감 +${g.toFixed(1)} · -${fmtWon(o.cost)}`, 'love');
+  log(`${wa(CH[id].name)} ${o.label} · 호감 +${g.toFixed(1)} · -${fmtWon(o.cost)}`, 'love');
   checkEvents();
-  return ok();
+  return ok({ g, label: o.label });
 }
 function giveGift(id, itemId) {
   const p = S.people[id]; if (!p) return fail('');
@@ -2424,7 +2425,7 @@ function canPropose(id) { const p = S.people[id]; return p && p.lover && !spouse
 function propose(id) {
   if (!canPropose(id)) return fail('');
   const p = S.people[id]; p.lover = false; p.spouse = true; S.flags.married = id;
-  log(`${CH[id].name}와 결혼했습니다`, 'love'); enqueue('wedding:' + id);
+  log(`${wa(CH[id].name)} 결혼했습니다`, 'love'); enqueue('wedding:' + id);
   return ok();
 }
 function remember(id) {
@@ -2445,8 +2446,8 @@ function breakOthers(keep) {
   for (const id of partners()) {
     if (id === keep) continue;
     const p = S.people[id];
-    if (p.spouse) { p.spouse = false; delete S.flags.married; log(`${CH[id].name}와 이혼했습니다`, 'bad'); }
-    else log(`${CH[id].name}와 헤어졌습니다`, 'bad');
+    if (p.spouse) { p.spouse = false; delete S.flags.married; log(`${wa(CH[id].name)} 이혼했습니다`, 'bad'); }
+    else log(`${wa(CH[id].name)} 헤어졌습니다`, 'bad');
     p.lover = false; addAff(id, -35);
   }
   if (keep) addAff(keep, -10);
@@ -2454,6 +2455,7 @@ function breakOthers(keep) {
 }
 function scandal() { S.st.fame = Math.max(0, S.st.fame - 5 - S.st.fame * 0.1); }
 // 받침에 맞는 조사. 한글로 끝나지 않으면 '이(가)' 꼴
+const wa = n => n + josa(n, '과', '와');   // 「엄마와 / 박미숙과」
 function josa(w, a, b) {
   const c = String(w).charCodeAt(String(w).length - 1);
   return c >= 0xAC00 && c <= 0xD7A3 ? ((c - 0xAC00) % 28 ? a : b) : a + '(' + b + ')';
@@ -2909,7 +2911,7 @@ function resolveEvent(key) {
   if (kind === 'lover') return { title: '고백', art: 'char:' + a, lines: [
     { s: 'me', t: '좋아해. 오래전부터.' },
     { s: a, t: LOVER_LINE[a] || '…나도. 언제 말하나 기다렸어.' },
-    { n: `${CH[a].name}와 연인이 되었습니다.` },
+    { n: `${wa(CH[a].name)} 연인이 되었습니다.` },
   ] };
   if (kind === 'wedding') return { title: '결혼식', art: 'char:' + a, lines: [
     { n: `${year()}년 ${month()}월. 작은 예식장에 가족과 친구들이 모였습니다.` },
@@ -3084,6 +3086,12 @@ function storyAdvance() {
     RUN.cur = L;
     return;
   }
+}
+// 건너뛰기: 이 이야기의 다음 선택지·내기 창까지, 없으면 끝까지 한 번에 넘긴다 (효과는 모두 적용)
+function storySkip() {
+  if (!RUN) return;
+  const key = RUN.key;
+  while (RUN && RUN.key === key && !(RUN.cur && (RUN.cur.c || RUN.cur.bet))) storyAdvance();
 }
 function storyChoose(k) {
   if (!RUN || !RUN.cur || !RUN.cur.c) return false;
@@ -3360,7 +3368,7 @@ function lineChart(vals, opts) {
 
 // ===== 화면 =====
 // 화면 상태는 저장하지 않는다. 게임 상태는 S, 이야기 진행은 RUN 에 있다
-const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, confirmNext: false, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
+const UI = { sort: 'base', bet: null, tab: 'main', sheet: null, sel: null, side: 'buy', slot: null, shopTab: 'gear', pview: 'map', estSel: null, lottoPick: [], ftab: 'KS', range: '5y', qty: 1, amt: 100000, bubble: '', say: {}, giftOpen: false,
   typed: 0, typedKey: '', toastMsg: '', endShown: false, confirmNew: false, recall: null, scrollKey: '', pops: [], finP: 'q', order: null, futLev: FUT_LEV };
 const $ = id => document.getElementById(id);
 const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -3430,7 +3438,7 @@ function topbarHTML() {
 function tabbarHTML() {
   const t = [['main', '메인', 'home'], ['invest', '투자', 'chart'], ['people', '인연', 'heart'], ['status', '상태', 'user']];
   const next = S.ended ? '<button class="next" disabled><span><b>엔딩</b></span></button>'
-    : `<button class="next ${UI.confirmNext ? 'confirm' : ''}" data-act="next" aria-label="다음 달로 넘기기"><span><b>${UI.confirmNext ? '넘길까요?' : '다음 달'}</b><small class="num">${S.mi >= LAST_MI ? '마지막 달' : fmtYM(S.mi + 1)}</small></span>${icon('next', 18)}</button>`;
+    : `<button class="next" data-act="next" aria-label="다음 달로 넘기기"><span><b>다음 달</b><small class="num">${S.mi >= LAST_MI ? '마지막 달' : fmtYM(S.mi + 1)}</small></span>${icon('next', 18)}</button>`;
   return `<nav class="tabbar">${t.map(([k, l, i]) => `<button class="${UI.tab === k ? 'on' : ''}" data-act="tab" data-arg="${k}">${icon(i, 22)}${l}</button>`).join('')}${next}</nav>`;
 }
 function viewHTML() {
@@ -4184,7 +4192,7 @@ function storyHTML() {
   const full = !!x.L.c || UI.typedKey !== x.key || UI.typed >= x.text.length || !S.textSpeed;
   const shown = full ? x.text : x.text.slice(0, UI.typed);
   return `<div class="story" data-act="storyTap"><div class="story-card">
-    <div class="story-art">${artHTML(RUN.art)}<span class="story-title">${esc(RUN.title || '')}</span></div>
+    <div class="story-art">${artHTML(RUN.art)}<span class="story-title">${esc(RUN.title || '')}</span>${x.L.c ? '' : `<button class="story-skip" data-act="storySkip">건너뛰기 ${icon('next', 14)}</button>`}</div>
     <div class="story-box">
       ${x.who ? `<span class="story-name ${x.isMe ? 'me' : ''}">${esc(x.who)}</span>` : ''}
       <div class="story-text ${x.T.n ? 'narr' : ''} ${x.isMe ? 'mono' : ''}">${esc(shown)}</div>
@@ -4254,6 +4262,8 @@ function titleHTML() {
 }
 
 // ---- 동작 ----
+// 함께 시간을 보낸 뒤 그 사람이 하는 말
+const OUTING_SAY = { family: '오늘 같이 나오길 잘했다. 고마워.', romance: '오늘 정말 좋았어. 또 보자.', friend: '오늘 재밌었다! 다음에 또 놀자.', mentor: '오랜만에 좋은 시간이었구나.', rival: '…뭐, 나쁘지 않았어.' };
 // 팔았으면 저장하고 결과 창을 띄운다
 function sold(r) { if (r.ok) { save(); if (r.v && r.v.kind === 'sold') UI.pops.push(r.v); } render(); }
 const ACT = {
@@ -4270,7 +4280,11 @@ const ACT = {
     if (o && o.kind !== 'stock') { const max = o.kind === 'fut' ? futMax(o.id, o.lev) : optMax(o.K); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(1, Math.floor(max * p))); return render(); }
     const id = o ? o.id : UI.sel, max = orderMax(id); UI.qty = +p >= 1 ? max : Math.min(max, Math.max(qtyStep(id), roundQty(id, max * p))); render();
   },
-  trade(id) { const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty); if (r.ok) { UI.qty = 0; UI.order = null; if (!r.v) toast(S.log[0].t); } sold(r); },
+  trade(id) {
+    const r = UI.side === 'sell' ? sell(id, UI.qty) : buy(id, UI.qty);
+    if (r.ok) { UI.qty = 0; UI.order = null; if (!r.v) toast(S.log[0].t); if (!S.hold[id]) UI.side = 'buy'; }   // 다 팔았으면 다시 매수 쪽으로
+    sold(r);
+  },
   shopTab(t) { UI.shopTab = t; render(); },
   shopOpen() { UI.sheet = 'shop'; UI.shopTab = 'gear'; render(); },
   gearBuy(id) { const r = buyGear(id); if (r.ok) { toast(GR[id].name + (r.v ? '을(를) 입었습니다.' : '을(를) 샀습니다. 상태 탭에서 입을 수 있습니다.')); save(); } render(); },
@@ -4328,8 +4342,8 @@ const ACT = {
   finP(k) { UI.finP = k; render(); },
   shopBuy(id) { if (buyShop(id).ok) { toast(ITEM[id].name + '을(를) 샀습니다.'); save(); } render(); },
   person(id) { UI.sheet = 'person'; UI.sel = id; UI.giftOpen = false; render(); },
-  talk(id) { const r = talk(id); if (r.ok) UI.say[id] = r.v; afterTurn(); },
-  outing(id) { const r = outing(id); if (r.ok) { UI.sheet = null; UI.bubble = `${CH[id].name}와 즐거운 시간을 보냈습니다.`; } afterTurn(); },
+  talk(id) { const r = talk(id); if (r.ok) { UI.say[id] = r.v.line; toast(`호감 +${r.v.g.toFixed(1)}`); save(); } afterTurn(); },
+  outing(id) { const r = outing(id); if (r.ok) { UI.say[id] = OUTING_SAY[CH[id].kind] || OUTING_SAY.friend; toast(`${wa(CH[id].name)} ${r.v.label} · 호감 +${r.v.g.toFixed(1)}`); save(); } afterTurn(); },
   giftOpen() { UI.giftOpen = !UI.giftOpen; render(); },
   gift(a) { const [id, k] = a.split(':'); if (giveGift(id, k).ok) { UI.giftOpen = false; UI.say[id] = CH[id].likes.includes(k) ? '어? 이거 내가 좋아하는 건데! 고마워.' : '고마워. 잘 쓸게.'; save(); } afterTurn(); },
   money(id) { if (giveMoney(id).ok) { UI.say[id] = '뭘 이런 걸 다… 고맙다.'; save(); } render(); },
@@ -4349,12 +4363,9 @@ const ACT = {
   lottoClear() { UI.lottoPick = []; render(); },
   lottoBuy() { if (buyLotto(UI.lottoPick).ok) { UI.lottoPick = []; save(); } render(); },
   lottoReveal() { if (lottoReveal().ok) save(); render(); },
-  // 다음 달: 아직 할 수 있는 행동이 남았으면 한 번 더 눌러야 넘어간다
+  // 다음 달: 한 번 누르면 넘어간다
   next() {
     if (S.ended || RUN) return;
-    const canAct = ['study', 'gym', 'work'].some(k => !actionBlocked(k));
-    if (canAct && !UI.confirmNext) { UI.confirmNext = true; toast(`체력이 ${Math.round(S.sta)} 남았습니다. 한 번 더 누르면 다음 달로 넘어갑니다.`); return render(); }
-    UI.confirmNext = false;
     const r = nextMonth();
     if (r.ok) { UI.bubble = S.ended ? '마지막 달이 끝났습니다.' : S.hints.length ? '' : `${year()}년 ${month()}월 · 지난달보다 ${fmtSigned(netWorth() - S.monthStartNW)}`;
       const os = takeOptSettle(); if (os) UI.pops.push(os);               // 옵션이 만기로 정산됐으면 결과 창
@@ -4370,6 +4381,7 @@ const ACT = {
     if (x.L.c) return;
     storyAdvance(); afterTurn();
   },
+  storySkip() { clearInterval(typeTimer); storySkip(); afterTurn(); },
   choose(k) { storyChoose(+k); afterTurn(); },
   betPick(k) { if (UI.bet) UI.bet.k = +k; render(); },
   betPct(p) { const q = SPORT[UI.bet && UI.bet.id]; if (!q) return; const { bk, cash } = betState(q); UI.bet.stake = +p >= 1 ? cash : Math.floor(cash * p / bk.unit) * bk.unit; render(); },
@@ -4481,7 +4493,6 @@ function bindEvents() {
     const el = ev.target.closest && ev.target.closest('[data-act]');
     if (!el || el.disabled) return;
     const fn = ACT[el.dataset.act];
-    if (el.dataset.act !== 'next') UI.confirmNext = false;   // 다른 걸 누르면 넘기기 확인을 취소한다
     if (fn) fn(el.dataset.arg, el, ev);
   });
   document.addEventListener('input', ev => {

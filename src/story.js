@@ -219,7 +219,7 @@ function resolveEvent(key) {
   if (kind === 'lover') return { title: '고백', art: 'char:' + a, lines: [
     { s: 'me', t: '좋아해. 오래전부터.' },
     { s: a, t: LOVER_LINE[a] || '…나도. 언제 말하나 기다렸어.' },
-    { n: `${CH[a].name}와 연인이 되었습니다.` },
+    { n: `${wa(CH[a].name)} 연인이 되었습니다.` },
   ] };
   if (kind === 'wedding') return { title: '결혼식', art: 'char:' + a, lines: [
     { n: `${year()}년 ${month()}월. 작은 예식장에 가족과 친구들이 모였습니다.` },
@@ -394,6 +394,12 @@ function storyAdvance() {
     RUN.cur = L;
     return;
   }
+}
+// 건너뛰기: 이 이야기의 다음 선택지·내기 창까지, 없으면 끝까지 한 번에 넘긴다 (효과는 모두 적용)
+function storySkip() {
+  if (!RUN) return;
+  const key = RUN.key;
+  while (RUN && RUN.key === key && !(RUN.cur && (RUN.cur.c || RUN.cur.bet))) storyAdvance();
 }
 function storyChoose(k) {
   if (!RUN || !RUN.cur || !RUN.cur.c) return false;

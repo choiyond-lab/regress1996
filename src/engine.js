@@ -885,9 +885,9 @@ function talk(id) {
   const g = addAff(id, 2 + cha() / 30);
   const pool = CH[id].talk[stageOfAge(age())] || CH[id].talk.adult || CH[id].talk.teen || CH[id].talk.kid;
   const line = pool[Math.floor(rand() * pool.length)].replace(/준호/g, S.name.slice(1));
-  log(`${CH[id].name}와 이야기했습니다 · 호감 +${g.toFixed(1)}`, 'love');
+  log(`${wa(CH[id].name)} 이야기했습니다 · 호감 +${g.toFixed(1)}`, 'love');
   checkEvents();
-  return ok(line);
+  return ok({ line, g });
 }
 function outing(id) {
   const p = S.people[id]; if (!p) return fail('');
@@ -899,9 +899,9 @@ function outing(id) {
   if (S.cash < o.cost) return fail('돈이 부족합니다.');
   S.sta -= o.sta; S.cash -= o.cost; p.outMi = S.mi;
   const g = addAff(id, 5 + cha() / 15);
-  log(`${CH[id].name}와 ${o.label} · 호감 +${g.toFixed(1)} · -${fmtWon(o.cost)}`, 'love');
+  log(`${wa(CH[id].name)} ${o.label} · 호감 +${g.toFixed(1)} · -${fmtWon(o.cost)}`, 'love');
   checkEvents();
-  return ok();
+  return ok({ g, label: o.label });
 }
 function giveGift(id, itemId) {
   const p = S.people[id]; if (!p) return fail('');
@@ -942,7 +942,7 @@ function canPropose(id) { const p = S.people[id]; return p && p.lover && !spouse
 function propose(id) {
   if (!canPropose(id)) return fail('');
   const p = S.people[id]; p.lover = false; p.spouse = true; S.flags.married = id;
-  log(`${CH[id].name}와 결혼했습니다`, 'love'); enqueue('wedding:' + id);
+  log(`${wa(CH[id].name)} 결혼했습니다`, 'love'); enqueue('wedding:' + id);
   return ok();
 }
 function remember(id) {
@@ -963,8 +963,8 @@ function breakOthers(keep) {
   for (const id of partners()) {
     if (id === keep) continue;
     const p = S.people[id];
-    if (p.spouse) { p.spouse = false; delete S.flags.married; log(`${CH[id].name}와 이혼했습니다`, 'bad'); }
-    else log(`${CH[id].name}와 헤어졌습니다`, 'bad');
+    if (p.spouse) { p.spouse = false; delete S.flags.married; log(`${wa(CH[id].name)} 이혼했습니다`, 'bad'); }
+    else log(`${wa(CH[id].name)} 헤어졌습니다`, 'bad');
     p.lover = false; addAff(id, -35);
   }
   if (keep) addAff(keep, -10);
@@ -972,6 +972,7 @@ function breakOthers(keep) {
 }
 function scandal() { S.st.fame = Math.max(0, S.st.fame - 5 - S.st.fame * 0.1); }
 // 받침에 맞는 조사. 한글로 끝나지 않으면 '이(가)' 꼴
+const wa = n => n + josa(n, '과', '와');   // 「엄마와 / 박미숙과」
 function josa(w, a, b) {
   const c = String(w).charCodeAt(String(w).length - 1);
   return c >= 0xAC00 && c <= 0xD7A3 ? ((c - 0xAC00) % 28 ? a : b) : a + '(' + b + ')';
